@@ -1,0 +1,46 @@
+This is BibTeX, Version 0.99e (TeX Live 2026/Arch Linux)
+Capacity: max_strings=200000, hash_size=200000, hash_prime=170003
+The top-level auxiliary file: cource_report.aux
+The style file: biblio/belarus-specific-utf8gost780u.bst
+Database file #1: biblio/othercites.bib
+You've used 5 entries,
+            2678 wiz_defined-function locations,
+            682 strings with 5984 characters,
+and the built_in function-call counts, 1846 in all, are:
+= -- 276
+> -- 33
+< -- 6
++ -- 13
+- -- 8
+* -- 93
+:= -- 190
+add.period$ -- 27
+call.type$ -- 5
+change.case$ -- 0
+chr.to.int$ -- 0
+cite$ -- 5
+duplicate$ -- 94
+empty$ -- 175
+format.name$ -- 13
+if$ -- 514
+int.to.chr$ -- 0
+int.to.str$ -- 5
+missing$ -- 0
+newline$ -- 42
+num.names$ -- 8
+pop$ -- 29
+preamble$ -- 1
+purify$ -- 0
+quote$ -- 0
+skip$ -- 56
+stack$ -- 0
+substring$ -- 50
+swap$ -- 78
+text.length$ -- 2
+text.prefix$ -- 0
+top$ -- 0
+type$ -- 0
+warning$ -- 0
+while$ -- 10
+width$ -- 6
+write$ -- 107
