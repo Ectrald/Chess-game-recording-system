@@ -1,0 +1,21 @@
+digraph G {
+  graph [rankdir=TB, bgcolor="white", pad="0.2", nodesep="0.35", ranksep="0.5", fontname="DejaVu Sans"];
+  node [shape=box, style="filled", fillcolor="white", color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=10, margin="0.12,0.08"];
+  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=8, arrowsize=0.7];
+  obs [label="Устойчивое\nнаблюдение"];
+  ch [label="Изменившиеся\nклетки"];
+  legal [label="Legal moves\nтекущей позиции"];
+  cand [label="Кандидаты,\nобъясняющие изменения"];
+  score [label="Расчёт S(m)\nvisual + temporal + geometry"];
+  margin [shape=diamond, label="Запас между\nкандидатами достаточен?", style="filled", fillcolor="white"];
+  accept [label="Принять ход\nобновить FEN/PGN"];
+  retry [label="UNCERTAIN\nполучить новые данные"];
+  obs -> ch;
+  obs -> score;
+  legal -> cand;
+  ch -> cand;
+  cand -> score;
+  score -> margin;
+  margin -> accept [label="да"];
+  margin -> retry [label="нет"];
+}

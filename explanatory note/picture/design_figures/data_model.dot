@@ -1,0 +1,23 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="white", pad="0.2", nodesep="0.5", ranksep="0.6", fontname="DejaVu Sans"];
+  node [shape=record, style="filled", fillcolor="white", color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=9, margin="0.1,0.05"];
+  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=8, arrowsize=0.7];
+
+  Frame [label="{Frame|frame\_id\ntimestamp\nimage}"];
+  Geometry [label="{BoardGeometry|corners[4]\nhomography\nconfidence}"];
+  Cell [label="{CellObservation|square\nprobabilities\npredicted\nconfidence\noccluded}"];
+  Obs [label="{BoardObservation|timestamp\ncells[64]\nmotion\nocclusion\ngeometry\_confidence}"];
+  Hypo [label="{MoveHypothesis|move\nchanged\_squares\nscore}"];
+  Event [label="{MoveEvent|ply\nFEN before\nmove SAN/UCI\nFEN after\nconfidence\nevidence\_frames}"];
+  Game [label="{GameState|board\nply\_index\naccepted\_moves\nstatus}"];
+  Analysis [label="{EngineAnalysis|eval\_before\neval\_after\nbest\_move\ncritical\_flag}"];
+
+  Frame -> Geometry [label="processed by"];
+  Geometry -> Obs [label="normalizes"];
+  Cell -> Obs [label="64 cells"];
+  Obs -> Hypo [label="evidence"];
+  Game -> Hypo [label="legal moves"];
+  Hypo -> Event [label="accepted"];
+  Event -> Game [label="updates"];
+  Event -> Analysis [label="analyzed"];
+}

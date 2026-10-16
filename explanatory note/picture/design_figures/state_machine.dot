@@ -1,0 +1,25 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="white", pad="0.2", nodesep="0.5", ranksep="0.7", fontname="DejaVu Sans"];
+  node [shape=ellipse, style="filled", fillcolor="white", color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=10];
+  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=8, arrowsize=0.7];
+  start [shape=circle, label="", width=0.18, fixedsize=true];
+  stable [label="STABLE"];
+  moving [label="MOVING"];
+  verifying [label="VERIFYING"];
+  uncertain [label="UNCERTAIN"];
+  lost [label="BOARD\nLOST"];
+  finish [shape=doublecircle, label="", width=0.22, fixedsize=true];
+
+  start -> stable;
+  stable -> moving [label="motion"];
+  moving -> verifying [label="motion stopped"];
+  verifying -> stable [label="position confirmed"];
+  verifying -> uncertain [label="conflict / low confidence"];
+  uncertain -> verifying [label="new evidence"];
+  uncertain -> stable [label="user confirms"];
+  stable -> lost [label="bad geometry"];
+  moving -> lost [label="bad geometry"];
+  verifying -> lost [label="bad geometry"];
+  lost -> stable [label="geometry restored"];
+  stable -> finish [label="end session"];
+}

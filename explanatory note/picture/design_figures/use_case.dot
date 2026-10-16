@@ -1,0 +1,29 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="white", pad="0.2", nodesep="0.35", ranksep="0.8", fontname="DejaVu Sans"];
+  node [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=10];
+  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=9, arrowsize=0.7];
+
+  player [shape=box, label="Игрок /\nнаблюдатель", style="filled", fillcolor="white"];
+  analyst [shape=box, label="Аналитик\nпартии", style="filled", fillcolor="white"];
+  camera [shape=box, label="Источник\nвидео", style="filled", fillcolor="white"];
+  engine [shape=box, label="Шахматный\nдвижок", style="filled", fillcolor="white"];
+
+  start [shape=ellipse, label="Запустить\nсеанс", style="filled", fillcolor="white"];
+  register [shape=ellipse, label="Зарегистрировать\nпартию", style="filled", fillcolor="white"];
+  view [shape=ellipse, label="Просмотреть\nпозицию и ходы", style="filled", fillcolor="white"];
+  resolve [shape=ellipse, label="Подтвердить\nнеоднозначность", style="filled", fillcolor="white"];
+  analyze [shape=ellipse, label="Получить\nанализ хода", style="filled", fillcolor="white"];
+  report [shape=ellipse, label="Сформировать\nотчёт партии", style="filled", fillcolor="white"];
+  export [shape=ellipse, label="Экспортировать\nPGN", style="filled", fillcolor="white"];
+
+  player -> start;
+  player -> register;
+  player -> view;
+  player -> resolve;
+  analyst -> view;
+  analyst -> analyze;
+  analyst -> report;
+  analyst -> export;
+  camera -> register [label="видеопоток"];
+  engine -> analyze [label="оценка"];
+}

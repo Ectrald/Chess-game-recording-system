@@ -1,0 +1,15 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="white", pad="0.2", nodesep="0.35", ranksep="0.5", fontname="DejaVu Sans"];
+  node [shape=box, style="filled", fillcolor="white", color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=10, margin="0.12,0.08"];
+  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=8, arrowsize=0.7];
+  a [label="Кадр"];
+  b [label="Детектор\nboard"];
+  c [label="Уточнение\nграниц"];
+  d [label="4 угла"];
+  e [label="Homography"];
+  f [label="640 × 640"];
+  g [label="8 × 8\nклеток"];
+  h [label="Проверка\nгеометрии"];
+  a -> b -> c -> d -> e -> f -> g -> h;
+  h -> b [label="качество низкое", style=dashed];
+}

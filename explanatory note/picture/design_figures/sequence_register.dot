@@ -1,0 +1,27 @@
+digraph G {
+  graph [rankdir=TB, bgcolor="white", pad="0.2", nodesep="0.3", ranksep="0.55", fontname="DejaVu Sans"];
+  node [shape=box, style="filled", fillcolor="white", color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=9, margin="0.1,0.06"];
+  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=8, arrowsize=0.7];
+
+  U [label="Пользователь"];
+  V [label="VideoInput"];
+  B [label="BoardVision"];
+  H [label="HandGate"];
+  P [label="PieceRecognizer"];
+  T [label="TemporalState"];
+  S [label="ChessSolver"];
+  G [label="GameState"];
+  E [label="Stockfish"];
+
+  U -> V [label="start session"];
+  V -> B [label="frame"];
+  B -> H [label="normalized board"];
+  H -> P [label="64 cells + occlusion"];
+  P -> T [label="probabilities"];
+  V -> T [label="motion"];
+  T -> S [label="candidate position"];
+  S -> G [label="legal move"];
+  G -> E [label="accepted position", style=dashed];
+  E -> G [label="analysis", style=dashed];
+  G -> U [label="move / status"];
+}

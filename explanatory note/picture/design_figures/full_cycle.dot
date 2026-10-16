@@ -1,0 +1,39 @@
+digraph G {
+  graph [rankdir=TB, bgcolor="white", pad="0.25", nodesep="0.3", ranksep="0.45", fontname="DejaVu Sans"];
+  node [shape=box, style="filled", fillcolor="white", color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=9, margin="0.11,0.07"];
+  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=8, arrowsize=0.7];
+
+  f0 [label="Кадр"];
+  f1 [label="Доска найдена\nи геометрия корректна?"]; 
+  f2 [label="Нормализация\nперспективы"];
+  f3 [label="Рука / движение\nи качество кадра"];
+  f4 [label="Классификация\n64 клеток"];
+  f5 [label="Temporal state\nSTABLE / MOVING / VERIFYING"];
+  f6 [label="Изменение состояния\nзафиксировано?"];
+  f7 [label="Legal move\nкандидаты"];
+  f8 [label="Визуальная оценка\nкандидатов"];
+  f9 [label="Достаточная\nуверенность?"];
+  f10 [label="MoveEvent\nсохранение"];
+  f11 [label="Stockfish\nасинхронный анализ"];
+  f12 [label="Следующий кадр"];
+  f13 [label="Восстановление\n/ ожидание"];
+
+  f0 -> f1;
+  f1 -> f2 [label="да"];
+  f1 -> f13 [label="нет"];
+  f2 -> f3;
+  f3 -> f4;
+  f4 -> f5;
+  f5 -> f6;
+  f6 -> f7 [label="да"];
+  f6 -> f12 [label="нет"];
+  f7 -> f8;
+  f8 -> f9;
+  f9 -> f10 [label="да"];
+  f9 -> f13 [label="нет"];
+  f10 -> f11 [style=dashed, label="асинхронно"];
+  f10 -> f12;
+  f11 -> f12 [style=dashed];
+  f13 -> f12;
+  f12 -> f0;
+}

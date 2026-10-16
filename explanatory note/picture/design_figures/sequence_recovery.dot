@@ -1,0 +1,27 @@
+digraph G {
+  graph [rankdir=TB, bgcolor="white", pad="0.2", nodesep="0.35", ranksep="0.65", fontname="DejaVu Sans"];
+  node [shape=box, style="filled", fillcolor="white", color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=9, margin="0.1,0.06"];
+  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=8, arrowsize=0.7];
+
+  O [label="BoardObservation"];
+  C [label="Сравнение\nс legal moves"];
+  U [label="UNCERTAIN"];
+  W [label="Ожидание\nследующих кадров"];
+  R [label="Повторная классификация\nизменившихся клеток"];
+  A [label="Альтернативные\nгипотезы"];
+  D [label="Решение"];
+  P [label="Принять ход"];
+  M [label="Ручное\nподтверждение"];
+
+  O -> C;
+  C -> D [label="есть согласованный кандидат"];
+  C -> U [label="нет согласованного кандидата"];
+  U -> W;
+  W -> O [label="новые кадры"];
+  W -> R [label="повтор"];
+  R -> A;
+  A -> C;
+  D -> P [label="margin достаточен"];
+  D -> U [label="неоднозначно"];
+  U -> M [label="лимит повторов"];
+}

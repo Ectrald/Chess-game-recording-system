@@ -1,0 +1,29 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam backgroundColor white
+left to right direction
+actor "Игрок / наблюдатель" as Player
+actor "Аналитик партии" as Analyst
+actor "Источник видео" as Camera
+actor "Шахматный движок" as Engine
+rectangle "Гибридная интеллектуальная система" {
+  usecase "Запустить сеанс" as UC1
+  usecase "Зарегистрировать\nпартию" as UC2
+  usecase "Просмотреть\nпозицию и ходы" as UC3
+  usecase "Подтвердить\nнеоднозначность" as UC4
+  usecase "Получить анализ\nхода" as UC5
+  usecase "Сформировать\nотчёт партии" as UC6
+  usecase "Экспортировать\nPGN" as UC7
+}
+Player --> UC1
+Player --> UC2
+Player --> UC3
+Player --> UC4
+Analyst --> UC3
+Analyst --> UC5
+Analyst --> UC6
+Analyst --> UC7
+Camera --> UC2
+Engine --> UC5
+@enduml

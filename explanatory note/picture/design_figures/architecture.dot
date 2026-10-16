@@ -1,0 +1,66 @@
+digraph G {
+  graph [rankdir=LR, bgcolor="white", pad="0.2", nodesep="0.35", ranksep="0.6", fontname="DejaVu Sans"];
+  node [shape=box, style="filled", fillcolor="white", color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=11, margin="0.12,0.08"];
+  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=9, arrowsize=0.7];
+
+  video [label="Источник\nвидеоданных"];
+
+  subgraph cluster_vision {
+    label="Контур визуального восприятия"; color="black"; fontcolor="black"; style="solid";
+    input [label="Адаптер\nкадров"];
+    board [label="Локализация\nдоски"];
+    geom [label="Геометрия и\nhomography"];
+    grid [label="Разбиение\n8 × 8"];
+    hand [label="MediaPipe\nHand Landmarker"];
+    cls [label="EfficientNet-B0\n3 классификатора"];
+    obs [label="BoardObservation\nвероятности и confidence"];
+    motion [label="Анализ движения"];
+  }
+
+  subgraph cluster_reason {
+    label="Контур принятия решения"; color="black"; fontcolor="black"; style="solid";
+    state [label="Временная модель\nSTABLE / MOVING / VERIFYING / UNCERTAIN"];
+    hypo [label="Генератор\nгипотез хода"];
+    kb [label="База знаний\nшахматной предметной области"];
+    solver [label="Решатель ограничений\nlegal moves"];
+    decision [label="Механизм\nподтверждения"];
+    game [label="Состояние партии\nFEN / PGN / MoveEvent"];
+  }
+
+  subgraph cluster_analysis {
+    label="Контур последующего анализа"; color="black"; fontcolor="black"; style="solid";
+    queue [label="Очередь\nаналитических заданий"];
+    engine [label="Stockfish\nанализ позиции"];
+    report [label="Аналитический\nрезультат"];
+  }
+
+  ui [label="Пользовательский\nинтерфейс"];
+  store [label="Хранилище\nсеанса и доказательств"];
+
+  video -> input;
+  input -> board;
+  board -> geom;
+  geom -> grid;
+  grid -> cls;
+  input -> hand;
+  grid -> hand [label="координаты"];
+  geom -> motion;
+  grid -> motion;
+  cls -> obs;
+  hand -> obs [label="occlusion"];
+  motion -> obs;
+  obs -> state;
+  state -> hypo;
+  kb -> solver;
+  hypo -> solver;
+  solver -> decision;
+  decision -> game;
+  game -> store;
+  game -> queue;
+  queue -> engine;
+  engine -> report;
+  report -> ui;
+  game -> ui;
+  ui -> decision [label="подтверждение", style=dashed];
+  decision -> state [label="принять / повторить"];
+}

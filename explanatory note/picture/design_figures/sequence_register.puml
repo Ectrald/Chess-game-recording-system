@@ -1,0 +1,34 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam backgroundColor white
+autonumber
+actor "Пользователь" as U
+participant "VideoInput" as V
+participant "BoardVision" as B
+participant "HandGate" as H
+participant "PieceRecognizer" as P
+participant "TemporalState" as T
+participant "ChessSolver" as S
+participant "GameState" as G
+participant "Stockfish" as E
+U -> V: start session
+loop анализируемый кадр
+  V -> B: кадр
+  B -> B: локализация + homography
+  B -> H: нормализованная доска
+  H -> P: 64 клетки + occlusion
+  P -> T: вероятности классов
+  V -> T: motion score
+  T -> S: кандидат нового состояния
+  S -> S: legal moves + scoring
+  alt кандидат подтверждён
+    S -> G: принять ход
+    G -> U: ход / новая позиция
+    G -[#black]> E: async FEN
+    E -[#black]> G: analysis
+  else неоднозначно
+    T -> V: ожидать новые кадры
+  end
+end
+@enduml
