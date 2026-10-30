@@ -1,0 +1,10 @@
+# Core dependencies for Chess Game Recording System
+# Python 3.10+ required
+
+numpy>=2.0.0
+pydantic>=2.10.0
+pyyaml>=6.0.0
+python-chess>=1.11.0
+opencv-python>=4.8.0
+pillow>=10.0.0
+pytest>=8.0.0

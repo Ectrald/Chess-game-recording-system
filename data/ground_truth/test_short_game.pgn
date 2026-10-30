@@ -1,0 +1,11 @@
+[Event "Scholar's Mate Test Game"]
+[Site "Benchmark Ground Truth"]
+[Date "2026.10.30"]
+[Round "1"]
+[White "White Player"]
+[Black "Black Player"]
+[Result "1-0"]
+[SetUp "1"]
+[FEN "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"]
+
+1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7# 1-0
