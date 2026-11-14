@@ -1,0 +1,45 @@
+@startuml
+' UML Use Case Diagram — Chess Game Recording System
+skinparam monochrome true
+skinparam shadowing false
+skinparam packageStyle rectangle
+left to right direction
+
+actor "Игрок / оператор" as Operator
+actor "Аналитик партии" as Analyst
+actor "Источник видеоданных" as VideoSource
+actor "Шахматный движок" as ChessEngine
+
+rectangle "Chess Game Recording System" {
+  usecase "Запустить сессию" as UC_Start
+  usecase "Остановить / приостановить сессию" as UC_Stop
+  usecase "Калибровать доску\nи ориентацию" as UC_Calibrate
+  usecase "Регистрировать\nшахматную партию" as UC_Record
+  usecase "Просмотреть текущую\nпозицию и ход" as UC_View
+  usecase "Разрешить\nнеоднозначность" as UC_Resolve
+  usecase "Исправить\nзарегистрированный ход" as UC_Correct
+  usecase "Экспортировать PGN\nи evidence" as UC_Export
+  usecase "Анализировать партию" as UC_Analyze
+  usecase "Просмотреть аналитический\nотчёт" as UC_Report
+}
+
+Operator --> UC_Start
+Operator --> UC_Stop
+Operator --> UC_Calibrate
+Operator --> UC_Record
+Operator --> UC_View
+Operator --> UC_Resolve
+Operator --> UC_Correct
+Operator --> UC_Export
+Analyst --> UC_View
+Analyst --> UC_Analyze
+Analyst --> UC_Report
+VideoSource --> UC_Start
+VideoSource --> UC_Record
+ChessEngine --> UC_Analyze
+
+UC_Record .> UC_Calibrate : <<include>>
+UC_Resolve .> UC_Record : <<extend>>
+UC_Correct .> UC_Resolve : <<extend>>
+UC_Analyze .> UC_Report : <<include>>
+@enduml

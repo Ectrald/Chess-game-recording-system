@@ -1,0 +1,82 @@
+@startuml
+' UML Component Diagram — logical architecture
+skinparam monochrome true
+skinparam shadowing false
+skinparam componentStyle uml2
+left to right direction
+
+package "Внешние источники" {
+  component "Camera / Video File" as Camera
+  component "Synthetic Generator" as Synthetic
+  component "Stockfish UCI" as Stockfish
+  component "Оператор" as User
+}
+
+package "Vision contour" {
+  component "Video Adapter\n[STAGE/0]" as VideoAdapter
+  component "Board Localizer\n(YOLO + Hough/RANSAC)" as Localizer
+  component "Geometry &\nHomography" as Geometry
+  component "Cell ROI Extractor" as ROI
+  component "Hand / Occlusion\nDetector (MediaPipe)" as Hand
+  component "Motion Detector" as Motion
+  component "Piece Classifier\n(ONNX Runtime)" as Classifier
+  component "Observation Builder" as ObsBuilder
+}
+
+package "Reasoning / Game State" {
+  component "Temporal State\nMachine" as FSM
+  component "Legal Move\nCandidate Generator" as Candidates
+  component "Move Scorer &\nAcceptance Gate" as Scorer
+  component "Recovery / Human\nConfirmation" as Recovery
+  component "GameStateManager" as GameState
+  component "Game Repository\n(JSONL / PGN / Evidence)" as Repository
+}
+
+package "Analysis contour" {
+  component "Bounded Analysis\nQueue" as Queue
+  component "Stockfish Adapter" as EngineAdapter
+  component "Analysis Result\nRepository" as AnalysisRepo
+}
+
+package "Presentation" {
+  component "CLI / Desktop UI" as UI
+}
+
+Camera --> VideoAdapter
+Synthetic --> VideoAdapter
+VideoAdapter --> Localizer : Frame
+VideoAdapter --> Hand : Frame
+Localizer --> Geometry : quadrilateral
+Geometry --> ROI : rectified board
+ROI --> Classifier : 64 cell crops
+Geometry --> ObsBuilder : geometry quality
+Hand --> ObsBuilder : landmarks / occlusion
+Motion --> ObsBuilder : motion score
+Geometry --> Motion : normalized board
+Classifier --> ObsBuilder : probabilities
+ObsBuilder --> FSM : BoardObservation
+FSM --> Candidates : stable observation window
+Candidates --> Scorer : legal candidates
+Scorer --> GameState : accepted candidate
+Scorer --> Recovery : uncertain candidate
+Recovery --> FSM : more observations
+Recovery --> UI : operator request
+GameState --> Repository : MoveEvent / PGN
+GameState --> Queue : confirmed event
+Queue --> EngineAdapter : analysis task
+EngineAdapter --> Stockfish : UCI
+EngineAdapter --> AnalysisRepo : AnalysisResult
+Repository --> UI : position / moves / evidence
+AnalysisRepo --> UI : evaluation / PV
+UI --> Recovery : confirmation / correction
+UI --> VideoAdapter : start / stop / pause
+
+note bottom of Hand
+  Optional advisory component.
+  Failure != proof that no hand is present.
+end note
+note bottom of GameState
+  Единственный writer
+  официальной позиции партии.
+end note
+@enduml

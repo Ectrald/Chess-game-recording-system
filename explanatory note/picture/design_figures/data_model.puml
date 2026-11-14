@@ -1,0 +1,97 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 10
+skinparam classFontSize 11
+skinparam ArrowFontSize 9
+skinparam ClassAttributeFontSize 9
+skinparam ClassStereotypeFontSize 9
+skinparam Nodesep 40
+skinparam Ranksep 35
+
+package "Первичные визуальные контракты" {
+  class Frame <<data contract>> {
+    + frame_id: int
+    + timestamp_sec: float
+    + image: ndarray
+    + color_space: str
+    + width: int
+    + height: int
+  }
+
+  class BoardGeometry <<data contract>> {
+    + corners_image: Point2D[4]
+    + homography: Matrix3x3
+    + target_size: int = 640
+    + orientation: BoardOrientation
+    + quality_score: float
+    + is_valid: bool
+  }
+}
+
+package "Наблюдения клеток и доски" {
+  class CellObservation <<data contract>> {
+    + square: str
+    + probabilities: float[13]
+    + predicted_class: str
+    + confidence: float
+    + is_occluded: bool
+  }
+
+  class BoardObservation <<data contract>> {
+    + frame_id: int
+    + timestamp_sec: float
+    + motion_score: float
+    + hand_occluded: bool
+    + geometry_quality: float
+  }
+}
+
+package "Шахматные гипотезы и события" {
+  class MoveHypothesis <<data contract>> {
+    + move_uci: str
+    + move_san: str
+    + changed_squares: str[]
+    + visual_score: float
+    + likelihood_score_S: float
+  }
+
+  class MoveEvent <<data contract>> {
+    + ply: int
+    + fen_before: str
+    + move_uci: str
+    + move_san: str
+    + fen_after: str
+    + timestamp: float
+    + evidence_refs: str[]
+  }
+}
+
+package "Состояние партии и анализ" {
+  class GameState <<authoritative>> {
+    + fen_current: str
+    + ply_count: int
+    + is_game_over: bool
+  }
+
+  class EngineAnalysis <<data contract>> {
+    + eval_centipawns: int
+    + mate_in: int
+    + best_move: str
+    + pv_line: str[]
+    + is_critical: bool
+  }
+}
+
+Frame "1" --> "0..1" BoardGeometry : порождает
+BoardGeometry "1" --> "1" BoardObservation : калибрует
+BoardObservation "1" *-- "64" CellObservation : агрегирует
+BoardObservation ..> MoveHypothesis : свидетельства
+GameState "1" --> "*" MoveHypothesis : легальные ходы
+MoveHypothesis ..> MoveEvent : принимается шлюзом
+GameState "1" *-- "*" MoveEvent : история партии
+MoveEvent "1" --> "0..1" EngineAnalysis : оценка
+
+@enduml

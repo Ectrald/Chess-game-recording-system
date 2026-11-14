@@ -1,39 +1,73 @@
-digraph G {
-  graph [rankdir=TB, bgcolor="white", pad="0.25", nodesep="0.3", ranksep="0.45", fontname="DejaVu Sans"];
-  node [shape=box, style="filled", fillcolor="white", color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=9, margin="0.11,0.07"];
-  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=8, arrowsize=0.7];
+digraph FullCycle {
+  graph [rankdir=TB, bgcolor="white", pad="0.2", nodesep="0.35", ranksep="0.45", fontname="DejaVu Sans"];
+  node [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=10];
+  edge [color="black", fontcolor="black", fontname="DejaVu Sans", fontsize=9, arrowsize=0.7];
 
-  f0 [label="Кадр"];
-  f1 [label="Доска найдена\nи геометрия корректна?"]; 
-  f2 [label="Нормализация\nперспективы"];
-  f3 [label="Рука / движение\nи качество кадра"];
-  f4 [label="Классификация\n64 клеток"];
-  f5 [label="Temporal state\nSTABLE / MOVING / VERIFYING"];
-  f6 [label="Изменение состояния\nзафиксировано?"];
-  f7 [label="Legal move\nкандидаты"];
-  f8 [label="Визуальная оценка\nкандидатов"];
-  f9 [label="Достаточная\nуверенность?"];
-  f10 [label="MoveEvent\nсохранение"];
-  f11 [label="Stockfish\nасинхронный анализ"];
-  f12 [label="Следующий кадр"];
-  f13 [label="Восстановление\n/ ожидание"];
+  start [shape=oval, label="Начало цикла обработки кадра", style="filled", fillcolor="white"];
+  frame [shape=box, label="1. Захват очередного кадра\nвидеопотока (Frame)", style="filled", fillcolor="white"];
+  check_geom [shape=diamond, label="2. Модель геометрии\nдоски валидна?", style="filled", fillcolor="white"];
+  
+  localize [shape=box, label="3. Двухстадийная локализация:\nYOLOv8n ROI + углы Hough/RANSAC", style="filled", fillcolor="white"];
+  check_corners [shape=diamond, label="4. Четыре угла доски\nнайдены корректно?", style="filled", fillcolor="white"];
+  homography [shape=box, label="5. Расчет гомографии H (640x640)\nи ориентации доски (a1-h8)", style="filled", fillcolor="white"];
+  board_lost [shape=box, label="Переход в режим ожидания доски\n(состояние BOARD_LOST)", style="filled", fillcolor="white"];
 
-  f0 -> f1;
-  f1 -> f2 [label="да"];
-  f1 -> f13 [label="нет"];
-  f2 -> f3;
-  f3 -> f4;
-  f4 -> f5;
-  f5 -> f6;
-  f6 -> f7 [label="да"];
-  f6 -> f12 [label="нет"];
-  f7 -> f8;
-  f8 -> f9;
-  f9 -> f10 [label="да"];
-  f9 -> f13 [label="нет"];
-  f10 -> f11 [style=dashed, label="асинхронно"];
-  f10 -> f12;
-  f11 -> f12 [style=dashed];
-  f13 -> f12;
-  f12 -> f0;
+  rectify [shape=box, label="6. Перспективная нормализация изображения\nдоски в единый размер 640x640", style="filled", fillcolor="white"];
+  
+  subgraph cluster_perception {
+    label="Параллельный первичный анализ кадра";
+    color="black"; style="dashed"; fontcolor="black"; fontsize=9;
+    hand [shape=box, label="7. Детектирование руки и расчет\nмаски окклюзии (MediaPipe)", style="filled", fillcolor="white"];
+    motion [shape=box, label="8. Оценка межкадрового движения\n(Motion Detection)", style="filled", fillcolor="white"];
+    classify [shape=box, label="9. Пакетная классификация\n64 клеток (ONNX Runtime)", style="filled", fillcolor="white"];
+  }
+  
+  obs [shape=box, label="10. Формирование агрегата визуального\nнаблюдения BoardObservation", style="filled", fillcolor="white"];
+  fsm [shape=box, label="11. Обновление автомата состояний FSM\n(STABLE / MOVING / SETTLING)", style="filled", fillcolor="white"];
+  
+  check_verifying [shape=diamond, label="12. Завершено движение?\n(состояние VERIFYING)", style="filled", fillcolor="white"];
+  
+  candidates [shape=box, label="13. Генерация легальных ходов M(B_t)\nпо топологическим сигнатурам", style="filled", fillcolor="white"];
+  score [shape=box, label="14. Расчет комплексного скоринга S(m)\nи запаса уверенности margin >= Delta", style="filled", fillcolor="white"];
+  
+  check_accepted [shape=diamond, label="15. Кандидат принят?\n(S >= tau и margin >= Delta)", style="filled", fillcolor="white"];
+  
+  commit [shape=box, label="16. Фиксация хода B_{t+1} и запись\nсобытия MoveEvent в журнал", style="filled", fillcolor="white"];
+  async_sf [shape=box, label="17. Асинхронная отправка позиции\nв очередь анализа Stockfish", style="filled", fillcolor="white"];
+  
+  uncertain [shape=box, label="18. Переход в состояние UNCERTAIN:\nдобор кадров / запрос оператора", style="filled", fillcolor="white"];
+  
+  next_frame [shape=oval, label="Переход к обработке\nследующего кадра", style="filled", fillcolor="white"];
+
+  start -> frame;
+  frame -> check_geom;
+  check_geom -> rectify [label="да"];
+  check_geom -> localize [label="нет"];
+  localize -> check_corners;
+  check_corners -> homography [label="да"];
+  check_corners -> board_lost [label="нет"];
+  board_lost -> next_frame;
+  homography -> rectify;
+
+  rectify -> hand;
+  rectify -> motion;
+  rectify -> classify;
+  
+  hand -> obs;
+  motion -> obs;
+  classify -> obs;
+  
+  obs -> fsm;
+  fsm -> check_verifying;
+  check_verifying -> candidates [label="да"];
+  check_verifying -> next_frame [label="нет (накопление кадров)"];
+  
+  candidates -> score;
+  score -> check_accepted;
+  check_accepted -> commit [label="да"];
+  check_accepted -> uncertain [label="нет"];
+  
+  commit -> async_sf;
+  async_sf -> next_frame;
+  uncertain -> next_frame;
 }

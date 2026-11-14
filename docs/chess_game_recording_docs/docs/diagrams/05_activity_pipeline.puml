@@ -1,0 +1,55 @@
+@startuml
+' UML Activity Diagram — video-to-move processing
+skinparam monochrome true
+skinparam shadowing false
+start
+:Open video source;
+repeat
+  :Read frame and timestamp;
+  :Check frame quality;
+if (Frame usable?) then (yes)
+  :Detect chessboard;
+  if (Board geometry valid?) then (yes)
+    :Compute homography;
+    :Resolve board orientation;
+    if (Orientation known?) then (yes)
+      :Extract 64 cell crops;
+      fork
+        :Detect hand landmarks;
+        :Build occlusion mask;
+      fork again
+        :Calculate motion score;
+      fork again
+        :Run batched cell classifier;
+      end fork
+      :Build BoardObservation;
+      :Update temporal state machine;
+      if (Board stable?) then (yes)
+        :Generate legal move candidates;
+        :Score candidates against visual evidence;
+        if (Acceptance gate passed?) then (yes)
+          :Revalidate move with chess rules;
+          :Persist MoveEvent and evidence;
+          :Update authoritative position;
+          :Queue asynchronous engine analysis;
+        else (no)
+          :Set UNCERTAIN;
+          :Collect more frames or request operator;
+        endif
+      else (no)
+        :Wait for stable observations;
+      endif
+    else (no)
+      :Request orientation calibration;
+    endif
+  else (no)
+    :Retry localization or request manual corners;
+  endif
+else (no)
+  :Drop frame / report source quality issue;
+endif
+repeat while (Session continues?) is (yes) not (no)
+:Flush journal and export PGN;
+:Release video resources;
+stop
+@enduml

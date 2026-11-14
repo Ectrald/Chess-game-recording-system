@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026/Arch Linux) (preloaded format=pdflatex 2026.10.5)  16 OCT 2026 21:35
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026/Arch Linux) (preloaded format=pdflatex 2026.11.10)  14 NOV 2026 15:35
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1324,32 +1324,32 @@ File: mt-msb.cfg 2005/06/01 v1.0 microtype config. file: AMS symbols (b) (RS)
 {/var/lib/texmf/fonts/map/pdftex/updmap/pdftex.map}{/usr/share/texmf-dist/fonts
 /enc/dvips/cm-super/cm-super-t2a.enc}]) (./table_of_contents.tex (./cource_repo
 rt.toc
-Overfull \hbox (0.75534pt too wide) detected at line 28
+Overfull \hbox (0.75534pt too wide) detected at line 29
 \T2A/cmr/m/n/14.4 2.4.10 
  []
 
 
-Overfull \hbox (0.75534pt too wide) detected at line 29
+Overfull \hbox (0.75534pt too wide) detected at line 30
 \T2A/cmr/m/n/14.4 2.4.11 
  []
 
 
-Overfull \hbox (0.75534pt too wide) detected at line 30
+Overfull \hbox (0.75534pt too wide) detected at line 31
 \T2A/cmr/m/n/14.4 2.4.12 
  []
 
 
-Overfull \hbox (0.75534pt too wide) detected at line 31
+Overfull \hbox (0.75534pt too wide) detected at line 32
 \T2A/cmr/m/n/14.4 2.4.13 
  []
 
 
-Overfull \hbox (0.75534pt too wide) detected at line 32
+Overfull \hbox (0.75534pt too wide) detected at line 33
 \T2A/cmr/m/n/14.4 2.4.14 
  []
 
 
-Overfull \hbox (0.75534pt too wide) detected at line 33
+Overfull \hbox (0.75534pt too wide) detected at line 34
 \T2A/cmr/m/n/14.4 2.4.15 
  []
 
@@ -1358,7 +1358,7 @@ pdfTeX warning (ext4): destination with the same identifier (name{page.1}) has
 been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.38 ...ёРЅС‚РµСЂС„РµР№СЃР°}{35}{subsection.0.3.3}
+l.36 ...»СЊРЅРѕР№ СЃРёСЃС‚РµРјС‹}{39}{section.0.3}
                                                   % [1])
 \tf@toc=\write5
 \openout5 = `cource_report.toc'.
@@ -1462,100 +1462,120 @@ Overfull \hbox (22.8145pt too wide) in paragraph at lines 67--67
  []
 
 [10] [11]) (./sections/sec_designing.tex [12]
-<picture/design_figures/use_case.pdf, id=255, 463.7325pt x 550.055pt>
+
+pdfTeX warning: pdflatex (file ./picture/design_figures/use_case.pdf): PDF incl
+usion: found PDF version <2.0>, but at most version <1.7> allowed
+<picture/design_figures/use_case.pdf, id=261, 462.7689pt x 276.36247pt>
 File: picture/design_figures/use_case.pdf Graphic file (type pdf)
 <use picture/design_figures/use_case.pdf>
 Package pdftex.def Info: picture/design_figures/use_case.pdf  used on input lin
-e 34.
-(pdftex.def)             Requested size: 413.13632pt x 490.051pt.
- [13
+e 37.
+(pdftex.def)             Requested size: 413.13632pt x 246.7293pt.
+[13
 
-] [14 <./picture/design_figures/use_case.pdf>] [15]
-<picture/design_figures/sequence_register.pdf, id=292, 355.3275pt x 820.06375pt
->
-File: picture/design_figures/sequence_register.pdf Graphic file (type pdf)
-<use picture/design_figures/sequence_register.pdf>
-Package pdftex.def Info: picture/design_figures/sequence_register.pdf  used on 
-input line 78.
-(pdftex.def)             Requested size: 231.17157pt x 533.52313pt.
- [16] [17 <./picture/design_figures/sequence_register.pdf>]
-<picture/design_figures/sequence_recovery.pdf, id=323, 494.84875pt x 681.54625p
-t>
-File: picture/design_figures/sequence_recovery.pdf Graphic file (type pdf)
-<use picture/design_figures/sequence_recovery.pdf>
-Package pdftex.def Info: picture/design_figures/sequence_recovery.pdf  used on 
-input line 87.
-(pdftex.def)             Requested size: 387.36981pt x 533.51746pt.
-<picture/design_figures/architecture.pdf, id=325, 2631.8325pt x 378.41376pt>
-File: picture/design_figures/architecture.pdf Graphic file (type pdf)
-<use picture/design_figures/architecture.pdf>
-Package pdftex.def Info: picture/design_figures/architecture.pdf  used on input
- line 100.
-(pdftex.def)             Requested size: 469.47049pt x 67.49947pt.
- [18] [19 <./picture/design_figures/sequence_recovery.pdf> <./picture/design_fi
-gures/architecture.pdf
-
-pdfTeX warning: pdflatex (file ./picture/design_figures/architecture.pdf): PDF 
-inclusion: multiple pdfs with page group included in a single page
->]
+] [14 <./picture/design_figures/use_case.pdf>]
 LaTeX Font Info:    Trying to load font information for T2A+cmtt on input line 
-126.
- (/usr/share/texmf-dist/tex/latex/cyrillic/t2acmtt.fd
+45.
+
+(/usr/share/texmf-dist/tex/latex/cyrillic/t2acmtt.fd
 File: t2acmtt.fd 2001/08/11 v1.0a Computer Modern Cyrillic font definitions
 )
 Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `cmtt' (encoding: T2A).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
-<picture/design_figures/data_model.pdf, id=366, 1502.61375pt x 260.975pt>
+
+Underfull \hbox (badness 3977) in paragraph at lines 60--61
+\T2A/cmr/m/n/14.4 (+20) тек-ти-ру-ет дос-ку с по-мо-щью двух-ста-дий-ной мо-де-
+ли (YOLOv8n +
+ []
+
+[15] [16]
+
+pdfTeX warning: pdflatex (file ./picture/design_figures/sequence_register.pdf):
+ PDF inclusion: found PDF version <2.0>, but at most version <1.7> allowed
+<picture/design_figures/sequence_register.pdf, id=317, 1006.83151pt x 756.43602
+pt>
+File: picture/design_figures/sequence_register.pdf Graphic file (type pdf)
+<use picture/design_figures/sequence_register.pdf>
+Package pdftex.def Info: picture/design_figures/sequence_register.pdf  used on 
+input line 110.
+(pdftex.def)             Requested size: 469.47768pt x 352.7202pt.
+[17] [18 <./picture/design_figures/sequence_register.pdf>]
+
+pdfTeX warning: pdflatex (file ./picture/design_figures/sequence_recovery.pdf):
+ PDF inclusion: found PDF version <2.0>, but at most version <1.7> allowed
+<picture/design_figures/sequence_recovery.pdf, id=376, 691.87482pt x 695.96008p
+t>
+File: picture/design_figures/sequence_recovery.pdf Graphic file (type pdf)
+<use picture/design_figures/sequence_recovery.pdf>
+Package pdftex.def Info: picture/design_figures/sequence_recovery.pdf  used on 
+input line 132.
+(pdftex.def)             Requested size: 469.48683pt x 472.25897pt.
+[19 <./picture/design_figures/sequence_recovery.pdf>]
+
+pdfTeX warning: pdflatex (file ./picture/design_figures/architecture.pdf): PDF 
+inclusion: found PDF version <2.0>, but at most version <1.7> allowed
+<picture/design_figures/architecture.pdf, id=417, 1094.0875pt x 1089.09889pt>
+File: picture/design_figures/architecture.pdf Graphic file (type pdf)
+<use picture/design_figures/architecture.pdf>
+Package pdftex.def Info: picture/design_figures/architecture.pdf  used on input
+ line 145.
+(pdftex.def)             Requested size: 469.47049pt x 467.32292pt.
+[20 <./picture/design_figures/architecture.pdf>] [21]
+
+pdfTeX warning: pdflatex (file ./picture/design_figures/data_model.pdf): PDF in
+clusion: found PDF version <2.0>, but at most version <1.7> allowed
+<picture/design_figures/data_model.pdf, id=440, 650.43pt x 888.31876pt>
 File: picture/design_figures/data_model.pdf Graphic file (type pdf)
 <use picture/design_figures/data_model.pdf>
 Package pdftex.def Info: picture/design_figures/data_model.pdf  used on input l
-ine 130.
-(pdftex.def)             Requested size: 441.3034pt x 76.64449pt.
- [20 <./picture/design_figures/data_model.pdf>] [21]
-<picture/design_figures/board_pipeline.pdf, id=398, 895.345pt x 178.6675pt>
+ine 183.
+(pdftex.def)             Requested size: 441.3034pt x 602.72041pt.
+[22] [23 <./picture/design_figures/data_model.pdf>] [24]
+<picture/design_figures/board_pipeline.pdf, id=557, 895.345pt x 178.6675pt>
 File: picture/design_figures/board_pipeline.pdf Graphic file (type pdf)
 <use picture/design_figures/board_pipeline.pdf>
 Package pdftex.def Info: picture/design_figures/board_pipeline.pdf  used on inp
-ut line 160.
+ut line 224.
 (pdftex.def)             Requested size: 431.91199pt x 86.19016pt.
- [22 <./picture/design_figures/board_pipeline.pdf>]
-<picture/design_figures/state_machine.pdf, id=421, 850.17625pt x 394.47375pt>
+ [25 <./picture/design_figures/board_pipeline.pdf>]
+<picture/design_figures/state_machine.pdf, id=579, 850.17625pt x 394.47375pt>
 File: picture/design_figures/state_machine.pdf Graphic file (type pdf)
 <use picture/design_figures/state_machine.pdf>
 Package pdftex.def Info: picture/design_figures/state_machine.pdf  used on inpu
-t line 210.
+t line 274.
 (pdftex.def)             Requested size: 431.91199pt x 200.40247pt.
- [23] [24 <./picture/design_figures/state_machine.pdf>]
-<picture/design_figures/move_decision.pdf, id=449, 476.78125pt x 544.0325pt>
+ [26] [27 <./picture/design_figures/state_machine.pdf>]
+<picture/design_figures/move_decision.pdf, id=604, 476.78125pt x 544.0325pt>
 File: picture/design_figures/move_decision.pdf Graphic file (type pdf)
 <use picture/design_figures/move_decision.pdf>
 Package pdftex.def Info: picture/design_figures/move_decision.pdf  used on inpu
-t line 254.
+t line 318.
 (pdftex.def)             Requested size: 441.3034pt x 503.57915pt.
- [25] [26 <./picture/design_figures/move_decision.pdf>] [27]
-<picture/design_figures/full_cycle.pdf, id=480, 403.5075pt x 1015.795pt>
+ [28] [29 <./picture/design_figures/move_decision.pdf>] [30] [31]
+<picture/design_figures/full_cycle.pdf, id=648, 867.24pt x 1452.42625pt>
 File: picture/design_figures/full_cycle.pdf Graphic file (type pdf)
 <use picture/design_figures/full_cycle.pdf>
 Package pdftex.def Info: picture/design_figures/full_cycle.pdf  used on input l
-ine 334.
-(pdftex.def)             Requested size: 211.92465pt x 533.50186pt.
- [28] [29 <./picture/design_figures/full_cycle.pdf>] [30] [31] [32] [33]) (./se
-ctions/sec_development.tex [34])
-(./sections/final.tex [35
+ine 403.
+(pdftex.def)             Requested size: 331.28815pt x 554.83096pt.
+ [32]
+[33 <./picture/design_figures/full_cycle.pdf>] [34] [35] [36] [37])
+(./sections/sec_development.tex [38]) (./sections/final.tex [39
 
-]) (./references.tex [36
+])
+(./references.tex [40
 
 ] (./cource_report.bbl))
 
 Package caption Warning: Unused \captionsetup[listing] on input line 167.
 See the caption package documentation for explanation.
 
-[37
+[41
 
 ]
-runsystem(latexminted cleantemp  --timestamp 20261016213525 2F9CE3A14CB641EF1B6
+runsystem(latexminted cleantemp  --timestamp 20261114153523 2F9CE3A14CB641EF1B6
 5629A76BBB30D)...executed safely (allowed).
 
  
@@ -1573,13 +1593,13 @@ Package rerunfilecheck Info: File `cource_report.out' has not changed.
 (rerunfilecheck)             Checksum: 864D106F0A3F09BF381599F76A254BA6;9701.
  ) 
 Here is how much of TeX's memory you used:
- 28937 strings out of 468980
- 576644 string characters out of 5462461
+ 28970 strings out of 468980
+ 576933 string characters out of 5462460
  1127070 words of memory out of 5000000
- 56861 multiletter control sequences out of 15000+600000
- 646388 words of font info for 154 fonts, out of 8000000 for 9000
+ 56862 multiletter control sequences out of 15000+600000
+ 646830 words of font info for 160 fonts, out of 8000000 for 9000
  430 hyphenation exceptions out of 8191
- 80i,12n,82p,1595b,1340s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 80i,12n,82p,1595b,1369s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/share/
 texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/share/texmf-dist/fon
 ts/type1/public/amsfonts/cm/cmmi12.pfb></usr/share/texmf-dist/fonts/type1/publi
@@ -1592,10 +1612,10 @@ public/cm-super/sfbx1728.pfb></usr/share/texmf-dist/fonts/type1/public/cm-super
 /usr/share/texmf-dist/fonts/type1/public/cm-super/sfrm1440.pfb></usr/share/texm
 f-dist/fonts/type1/public/cm-super/sfti1440.pfb></usr/share/texmf-dist/fonts/ty
 pe1/public/cm-super/sftt1440.pfb>
-Output written on cource_report.pdf (38 pages, 473773 bytes).
+Output written on cource_report.pdf (42 pages, 453416 bytes).
 PDF statistics:
- 656 PDF objects out of 1000 (max. 8388607)
- 537 compressed objects within 6 object streams
- 129 named destinations out of 1000 (max. 500000)
+ 821 PDF objects out of 1000 (max. 8388607)
+ 711 compressed objects within 8 object streams
+ 149 named destinations out of 1000 (max. 500000)
  33534 words of extra memory for PDF output out of 35830 (max. 10000000)
 

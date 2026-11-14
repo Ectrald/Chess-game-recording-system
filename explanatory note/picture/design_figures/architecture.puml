@@ -1,0 +1,70 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 11
+skinparam packageFontSize 12
+skinparam componentFontSize 11
+skinparam ArrowFontSize 10
+skinparam ComponentStyle uml2
+
+top to bottom direction
+
+package "Контур визуального восприятия (Нейробионический уровень)" as P_Vision {
+  component "VideoAdapter\n(Захват кадров)" as C_VA
+  component "BoardLocalizer\n(YOLOv8 + Hough/RANSAC)" as C_Loc
+  component "GeometryTransformer\n(Гомография 640x640)" as C_Geom
+  component "HandDetector\n(MediaPipe Landmarker)" as C_Hand
+  component "MotionDetector\n(Межкадровое движение)" as C_Motion
+  component "PieceClassifier\n(ONNX Runtime Batch=64)" as C_Cls
+  component "ObservationBuilder\n(Агрегатор наблюдения)" as C_Obs
+}
+
+package "Контур логико-символьного вывода и состояния партии" as P_Reason {
+  component "TemporalStateMachine\n(Автомат STABLE/MOVING/VERIFYING)" as C_FSM
+  component "CandidateGenerator\n(Топологические сигнатуры)" as C_Cand
+  component "KnowledgeBase & ChessSolver\n(Онтология и правила python-chess)" as C_KB
+  component "MoveScorer\n(Правдоподобие S(m) и margin)" as C_Score
+  component "GameStateManager\n(Авторитетное состояние)" as C_GSM
+}
+
+package "Контур персистентности и шахматного анализа" as P_Analysis {
+  component "GameRepository\n(Журнал JSONL / PGN / Evidence)" as C_Repo
+  component "AnalysisQueue\n(Очередь заданий)" as C_Queue
+  component "StockfishWorker\n(Движок Stockfish UCI)" as C_SF
+}
+
+actor "Шахматист / Оператор" as User
+component "Пользовательский интерфейс\n(GUI / CLI)" as C_UI
+
+User --> C_UI
+C_UI --> C_VA : старт / стоп
+C_UI <-- C_GSM : текущая позиция (FEN, SAN)
+C_UI <-- C_Repo : нотация PGN / экспорт
+
+C_VA --> C_Loc : Frame
+C_VA --> C_Hand : Frame
+C_Loc --> C_Geom : 4 угла
+C_Geom --> C_Motion : выпрямленная доска
+C_Geom --> C_Cls : 64 кропа клеток
+C_Geom --> C_Obs : BoardGeometry
+
+C_Hand --> C_Obs : маска перекрытий
+C_Motion --> C_Obs : показатель движения
+C_Cls --> C_Obs : вероятности 13 классов
+
+C_Obs --> C_FSM : BoardObservation
+C_FSM --> C_Cand : стабильное окно наблюдения
+C_KB --> C_Cand : легальные ходы M(B_t)
+C_Cand --> C_Score : кандидаты переходов
+C_Score --> C_GSM : принятый ход
+C_Score ..> C_UI : запрос при UNCERTAIN
+
+C_GSM --> C_Repo : подтвержденный MoveEvent
+C_GSM --> C_Queue : позиция для анализа
+C_Queue --> C_SF : задача оценки
+C_SF --> C_Repo : EngineAnalysis
+
+@enduml
+
