@@ -1,0 +1,18 @@
+# ==============================================================================
+# Chess Game Recording System - Camera Source Configuration
+# Used to configure physical camera, RTSP stream or test video input
+# ==============================================================================
+
+camera:
+  source_type: "device"           # 'device' for USB webcam, 'rtsp' for IP camera, 'file' for video
+  source_path: "0"                # Device index (/dev/video0) or stream URL
+  fps: 30.0
+  width: 1920
+  height: 1080
+  rotate: 0                       # Set to 90, 180, or 270 if camera is mounted sideways
+
+calibration:
+  intrinsic_matrix: null          # Camera matrix 3x3 for lens undistortion
+  distortion_coefficients: null   # Lens distortion vector [k1, k2, p1, p2, k3]
+  auto_white_balance: true
+  exposure_mode: "auto"           # 'auto' or 'manual'

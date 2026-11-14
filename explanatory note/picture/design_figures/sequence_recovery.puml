@@ -1,0 +1,59 @@
+@startuml
+skinparam monochrome true
+skinparam shadowing false
+skinparam backgroundColor white
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 10
+skinparam ArrowFontSize 9
+skinparam NoteFontSize 9
+skinparam BoxPadding 5
+skinparam ParticipantPadding 8
+
+autonumber
+
+participant "VisionContour" as Vision
+participant "TemporalFSM" as FSM
+participant "ChessSolver\n(python-chess)" as Solver
+actor "Шахматист /\nОператор" as User
+participant "GameStateManager" as GSM
+participant "GameRepository" as Repo
+
+Vision -> FSM : BoardObservation(низкая уверенность / тень)
+activate Vision
+deactivate Vision
+activate FSM
+
+FSM -> Solver : generate_legal_moves(FEN_t)
+activate Solver
+Solver --> FSM : список кандидатов M(B_t)
+deactivate Solver
+
+FSM -> FSM : расчет S(m): порог margin < Delta не достигнут
+
+note over FSM : Переход в состояние UNCERTAIN:\nзапуск каскада восстановления
+
+FSM -> Vision : request_additional_frames(изменившиеся клетки)
+activate Vision
+Vision --> FSM : уточненные наблюдения клеток
+deactivate Vision
+
+FSM -> FSM : повторный скоринг кандидатов
+
+alt Запас уверенности восстановлен по новым кадрам
+  FSM -> GSM : commit_move(m_best, evidence)
+  activate GSM
+  GSM -> Repo : append(MoveEvent)
+  GSM --> User : ход подтвержден автоматически
+else Неопределенность сохраняется (превышен таймаут)
+  FSM -> User : prompt_user_confirmation(список кандидатов, спорные клетки)
+  User -> FSM : подтвердить_ход(m_user)
+  FSM -> GSM : commit_confirmed_move(m_user, evidence)
+  GSM -> Repo : append(MoveEvent, причина="ручное подтверждение")
+  GSM --> User : ход зафиксирован
+  deactivate GSM
+end
+
+deactivate FSM
+
+@enduml
+

@@ -1,0 +1,40 @@
+# ==============================================================================
+# Chess Game Recording System - Default Configuration
+# Corresponds to mathematical parameters in Explanatory Note (Sections 2.4.1 - 2.4.8)
+# ==============================================================================
+
+vision:
+  target_board_size: 640          # Normalized board size in pixels (640x640)
+  min_camera_angle: 60.0          # Minimum camera angle in degrees relative to board
+  parallax_height_alpha: 1.25     # Vertical crop expansion factor for tall pieces
+  yolo_board_confidence: 0.50     # YOLO corner detector confidence threshold
+  classifier_batch_size: 64       # Batch size for 64-cell neural inference
+  threshold_occupied: 0.60        # tau_o: Occupancy probability threshold
+  threshold_color: 0.70           # tau_c: Piece color classification threshold
+  threshold_piece: 0.65           # tau_t: Piece type classification threshold
+
+temporal:
+  settling_time_sec: 0.8          # Delta t_settle: Debounce settling window in seconds
+  motion_diff_threshold: 0.05     # Optical change threshold to enter MOVING state
+  verifying_stable_frames: 10     # Consecutive stable frames required in VERIFYING
+
+decision:
+  weight_visual: 0.50             # w_v: Visual classification likelihood weight
+  weight_temporal: 0.25           # w_t: Temporal stability weight
+  weight_geometry: 0.15           # w_g: Homography quality weight
+  weight_occlusion: 0.10          # w_o: Occlusion penalty weight
+  min_confidence_margin: 0.15     # Delta: Minimum score margin S(m1) - S(m2)
+
+analysis:
+  stockfish_enabled: true
+  stockfish_depth: 15             # Engine search depth
+  stockfish_path: null            # Path to Stockfish executable (null = auto-discover)
+  blunder_threshold_cp: 150       # Blunder threshold in centipawns (150 = 1.5 pawns)
+
+camera:
+  source_type: "synthetic"        # 'synthetic', 'file', 'device', 'rtsp'
+  source_path: ""                 # Video path, webcam index or PGN path
+  fps: 30.0                       # Frame rate
+  width: 1920                     # Resolution width
+  height: 1080                    # Resolution height
+  rotate: 0                       # Orientation degrees: 0, 90, 180, 270

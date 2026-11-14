@@ -1,0 +1,43 @@
+@startuml
+' UML State Machine — recording session lifecycle
+skinparam monochrome true
+skinparam shadowing false
+[*] --> NO_SOURCE
+
+NO_SOURCE --> LOCATING_BOARD : source opened
+LOCATING_BOARD --> CALIBRATING : board geometry valid
+LOCATING_BOARD --> NO_SOURCE : source failed
+LOCATING_BOARD --> BOARD_LOST : board not found / timeout
+CALIBRATING --> STABLE : orientation and initial state confirmed
+CALIBRATING --> UNCERTAIN : orientation / position ambiguous
+UNCERTAIN --> CALIBRATING : operator supplies setup
+UNCERTAIN --> VERIFYING : new evidence received
+
+STABLE --> MOVING : motion score exceeds threshold
+MOVING --> SETTLING : motion stopped
+MOVING --> STABLE : transient motion / same position restored
+SETTLING --> MOVING : motion resumes
+SETTLING --> VERIFYING : settle interval passed [geometry valid]
+SETTLING --> UNCERTAIN : timeout / critical occlusion
+VERIFYING --> STABLE : candidate accepted and committed
+VERIFYING --> UNCERTAIN : no candidate / low margin / low score
+VERIFYING --> MOVING : motion resumes
+UNCERTAIN --> VERIFYING : additional stable observations
+UNCERTAIN --> STABLE : operator confirms / corrects position
+
+STABLE --> BOARD_LOST : geometry invalid / board leaves frame
+MOVING --> BOARD_LOST : board lost
+SETTLING --> BOARD_LOST : board lost
+VERIFYING --> BOARD_LOST : board lost
+BOARD_LOST --> LOCATING_BOARD : board visible again
+
+NO_SOURCE --> PAUSED : pause requested
+STABLE --> PAUSED : pause requested
+UNCERTAIN --> PAUSED : pause requested
+PAUSED --> LOCATING_BOARD : resume and recalibrate
+PAUSED --> STOPPED : stop requested
+STABLE --> STOPPED : stop requested
+UNCERTAIN --> STOPPED : stop requested
+BOARD_LOST --> STOPPED : stop requested
+STOPPED --> [*]
+@enduml

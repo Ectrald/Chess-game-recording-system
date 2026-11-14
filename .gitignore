@@ -1,0 +1,41 @@
+# Python & Virtualenv
+.venv/
+env/
+venv/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# IDE & OS
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Large datasets & models
+data/benchmark_videos/*.mp4
+data/benchmark_videos/*.avi
+data/benchmark_videos/*.mov
+!data/benchmark_videos/.gitkeep
+data/weights/*.pt
+data/weights/*.onnx
+data/weights/*.engine
+!data/weights/.gitkeep
+
+# LaTeX build artifacts
+explanatory note/*.aux
+explanatory note/*.bbl
+explanatory note/*.blg
+explanatory note/*.log
+explanatory note/*.out
+explanatory note/*.toc
+explanatory note/*.synctex.gz

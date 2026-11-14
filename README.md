@@ -107,12 +107,17 @@ pip install -r requirements.txt
 
 # Запуск системы на тестовом видеофайле
 python -m src.ui.app --source data/benchmark_videos/sample_game.mp4
+
+# Запуск полного набора модульных и интеграционных тестов
+pytest tests/ -v
 ```
 
 ---
 
 ## 7. Документация и ссылки
 
+* [STAGE_0.md](docs/stages/STAGE_0.md) — детальное проектирование и критерии приемки этапа 0 (Инфраструктура и бенчмарк-стенд).
+* [06_DATA_AND_MLOPS.md](docs/chess_game_recording_docs/06_DATA_AND_MLOPS.md) — спецификация пайплайна данных, доменных аугментаций, обучения (ImageNet / chesscog), интеграции с MLflow и инференса в ONNX Runtime.
 * [ROADMAP.md](ROADMAP.md) — дорожная карта проекта, детальные этапы разработки (WBS), критерии готовности (DoD) и анализ физических ограничений.
 * [Пояснительная записка](explanatory%20note/) — исходный код научно-технической пояснительной записки курсового проекта (LaTeX/ГОСТ).
 * Скомпилированный отчет: [cource_report.pdf](explanatory%20note/cource_report.pdf).

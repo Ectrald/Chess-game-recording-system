@@ -1,0 +1,55 @@
+@startuml
+' UML Sequence Diagram — registering one move
+skinparam monochrome true
+skinparam shadowing false
+autonumber
+
+actor Operator
+participant "VideoAdapter" as VA
+participant "VisionPipeline" as Vision
+participant "HandDetector" as Hand
+participant "TemporalFSM" as FSM
+participant "CandidateGenerator" as CG
+participant "MoveScorer" as Scorer
+participant "GameStateManager" as GSM
+database "GameRepository" as Repo
+participant "AnalysisQueue" as AQ
+participant "StockfishWorker" as SF
+
+Operator -> VA : start(session_config)
+VA --> Operator : source_ready
+
+loop until a movement event is detected
+  VA -> Vision : next_frame()
+  Vision -> Hand : detect_hand(frame)
+  Hand --> Vision : hand_status, regions
+  Vision -> Vision : localize board / normalize / classify cells
+  Vision --> FSM : BoardObservation
+  FSM -> FSM : update temporal state
+end
+
+VA -> Vision : frames after movement
+Vision --> FSM : stable ObservationWindow
+FSM -> CG : generate_candidates(current_position)
+CG --> FSM : legal candidates
+FSM -> Scorer : score(candidates, observations)
+Scorer --> FSM : ranked hypotheses
+
+alt one candidate passes acceptance gate
+  FSM -> GSM : commit(candidate, evidence)
+  GSM -> GSM : revalidate legal move, derive SAN/FEN
+  GSM -> Repo : append MoveEvent + evidence
+  Repo --> GSM : persisted
+  GSM -> GSM : update authoritative board
+  GSM -> AQ : enqueue(event_id, fen_before, fen_after)
+  GSM --> Operator : move_committed(SAN, FEN)
+  AQ -> SF : analyze(position_before, position_after)
+  SF --> AQ : score, best move, PV
+  AQ -> Repo : save AnalysisResult
+  Repo --> Operator : analysis_available
+else ambiguous or no supported candidate
+  FSM --> Operator : uncertain(top_candidates, reasons)
+  Operator -> FSM : confirm / correct / request more frames
+  FSM -> FSM : resume verification
+end
+@enduml

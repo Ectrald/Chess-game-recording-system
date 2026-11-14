@@ -2,33 +2,66 @@
 skinparam monochrome true
 skinparam shadowing false
 skinparam backgroundColor white
+skinparam defaultFontName "DejaVu Sans"
+skinparam defaultFontSize 10
+skinparam ArrowFontSize 9
+skinparam NoteFontSize 9
+skinparam BoxPadding 5
+skinparam ParticipantPadding 8
+
 autonumber
-actor "Пользователь" as U
-participant "VideoInput" as V
-participant "BoardVision" as B
-participant "HandGate" as H
-participant "PieceRecognizer" as P
-participant "TemporalState" as T
-participant "ChessSolver" as S
-participant "GameState" as G
-participant "Stockfish" as E
-U -> V: start session
-loop анализируемый кадр
-  V -> B: кадр
-  B -> B: локализация + homography
-  B -> H: нормализованная доска
-  H -> P: 64 клетки + occlusion
-  P -> T: вероятности классов
-  V -> T: motion score
-  T -> S: кандидат нового состояния
-  S -> S: legal moves + scoring
-  alt кандидат подтверждён
-    S -> G: принять ход
-    G -> U: ход / новая позиция
-    G -[#black]> E: async FEN
-    E -[#black]> G: analysis
-  else неоднозначно
-    T -> V: ожидать новые кадры
-  end
+
+actor "Шахматист /\nОператор" as User
+participant "VideoAdapter" as VA
+participant "VisionContour" as Vision
+participant "TemporalFSM" as FSM
+participant "ChessSolver\n(python-chess)" as Solver
+participant "GameStateManager" as GSM
+participant "GameRepository\n(JSONL/PGN)" as Repo
+participant "StockfishWorker" as SF
+
+User -> VA : Старт сеанса(config)
+activate VA
+VA --> User : Сеанс инициализирован
+
+loop Обработка видеопотока до фиксации завершения хода
+  VA -> Vision : get_frame()
+  activate Vision
+  Vision -> Vision : локализация / маска руки / классификация 64 клеток
+  Vision --> FSM : BoardObservation(t)
+  deactivate Vision
+  activate FSM
+  FSM -> FSM : обновление автомата (STABLE -> MOVING -> SETTLING)
+  deactivate FSM
 end
+
+note over FSM : Завершение дебаунсинга: переход в VERIFYING
+
+activate FSM
+FSM -> Solver : generate_legal_moves(FEN_t)
+activate Solver
+Solver --> FSM : список легальных ходов M(B_t)
+deactivate Solver
+
+FSM -> FSM : расчет правдоподобия S(m) и запаса margin >= Delta
+
+FSM -> GSM : commit_move(best_candidate, evidence)
+activate GSM
+GSM -> GSM : обновление позиции B_{t+1} (SAN, FEN)
+GSM -> Repo : append(MoveEvent, evidence)
+activate Repo
+Repo --> GSM : подтверждение записи
+deactivate Repo
+
+GSM -> SF : enqueue_analysis(FEN_t, FEN_{t+1})
+activate SF
+
+GSM --> User : ход зафиксирован (SAN, FEN)
+deactivate GSM
+deactivate FSM
+
+SF -> SF : асинхронный поиск лучшей линии (depth 20)
+SF -> Repo : сохранить_оценку(EngineAnalysis)
+deactivate SF
+
 @enduml

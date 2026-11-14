@@ -1,0 +1,9 @@
+[Event "Test Special Moves"]
+[Site "Benchmark Ground Truth"]
+[Date "2026.10.30"]
+[Round "2"]
+[White "Benchmark White"]
+[Black "Benchmark Black"]
+[Result "*"]
+
+1. e4 e6 2. e5 d5 3. exd6 Bxd6 4. d4 Nf6 5. Nf3 O-O 6. Be3 b6 7. Nc3 Bb7 8. Qd2 Qe7 9. O-O-O Rd8 10. Bd3 a5 11. a3 a4 12. Ne5 c6 13. f4 b5 14. g4 b4 15. axb4 a3 16. bxa3 Rxa3 17. Nb1 Ra1 18. g5 Nd5 19. c3 Nd7 20. Nc4 Rda8 21. Nxd6 Qxd6 22. Bc2 N7b6 23. Qd3 g6 24. Rdf1 Ba6 25. Qd2 Nc4 26. Qe1 Ndxe3 27. Rf3 Ra2 28. Bb3 Rb2 29. Rxe3 Rxb3 30. Re4 Bb5 31. h4 Ra1 32. Kc2 Ba4 33. Kd3 Nb2+ 34. Ke3 Qd5 35. Kf3 Nc4 36. Kg4 Qf5+ 37. Kg3 Nd6 38. Re5 Qd3+ 39. Re3 Nf5+ 40. Kf3 Nxe3 41. Qxe3 Qxe3+ 42. Kxe3 Raxb1 43. Rxb1 Rxb1 44. Kd3 Rh1 45. c4 Rxh4 46. Ke4 h5 47. gxh6 Kh7 48. Ke5 Kxh6 49. d5 exd5 50. cxd5 cxd5 51. Kxd5 Rxf4 52. Kc5 g5 53. b5 Bxb5 54. Kxb5 g4 55. Kc5 g3 56. Kd5 g2 57. Ke5 Rf1 58. Kd6 g1=Q *

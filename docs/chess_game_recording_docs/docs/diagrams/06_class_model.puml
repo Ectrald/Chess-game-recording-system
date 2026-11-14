@@ -1,0 +1,98 @@
+@startuml
+' UML Class Diagram — core domain contracts
+skinparam monochrome true
+skinparam shadowing false
+skinparam classAttributeIconSize 0
+
+class Frame {
+  +session_id: UUID
+  +frame_id: int
+  +timestamp_sec: float
+  +image: ndarray
+  +width: int
+  +height: int
+  +color_space: ColorSpace
+}
+
+class BoardGeometry {
+  +corners_image: Point2D[4]
+  +homography_image_to_board: Matrix3x3
+  +homography_board_to_image: Matrix3x3
+  +orientation: BoardOrientation
+  +geometry_quality: float
+  +reprojection_error_px: float
+  +is_valid: bool
+}
+
+class CellObservation {
+  +square: SquareName
+  +probabilities: Map<PieceClass,float>
+  +predicted_piece: PieceClass?
+  +confidence: float
+  +entropy: float
+  +occlusion_ratio: float
+  +is_reliable: bool
+}
+
+class BoardObservation {
+  +frame_id: int
+  +timestamp_sec: float
+  +cells: Map<SquareName,CellObservation>
+  +motion_score: float
+  +hand_detector_status: DetectorStatus
+  +observation_quality: float
+}
+
+class ObservationWindow {
+  +start_timestamp_sec: float
+  +end_timestamp_sec: float
+  +observations: List<BoardObservation>
+  +stable_duration_sec: float
+}
+
+class MoveHypothesis {
+  +candidate_id: UUID
+  +move_uci: str
+  +fen_before: str
+  +expected_fen_after: str
+  +visual_log_likelihood: float
+  +temporal_score: float
+  +total_score: float
+}
+
+class MoveEvent {
+  +event_id: UUID
+  +ply: int
+  +move_uci: str
+  +move_san: str
+  +fen_before: str
+  +fen_after: str
+  +confidence_score: float
+  +timestamp_sec: float
+}
+
+class AnalysisResult {
+  +event_id: UUID
+  +engine_name: str
+  +score_before: Score
+  +score_after: Score
+  +best_move_uci: str?
+  +principal_variation: List<str>
+  +status: AnalysisStatus
+}
+
+class GameStateManager {
+  +current_position: chess.Board
+  +commit(candidate): MoveEvent
+  +replay(events): chess.Board
+}
+
+Frame ..> BoardGeometry : localized as
+Frame ..> BoardObservation : observed as
+BoardObservation "1" *-- "64" CellObservation
+ObservationWindow "1" *-- "1..*" BoardObservation
+ObservationWindow --> MoveHypothesis : evaluated into
+MoveHypothesis --> MoveEvent : accepted as
+GameStateManager "1" o-- "0..*" MoveEvent
+MoveEvent "1" --> "0..1" AnalysisResult
+@enduml
