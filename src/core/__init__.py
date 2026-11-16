@@ -10,12 +10,17 @@ from src.core.exceptions import (
     VideoSourceError,
 )
 from src.core.datatypes import (
+    AutoLabellerSample,
     BoardGeometry,
     BoardObservation,
     BoardOrientation,
     CellObservation,
     CellROI,
     Frame,
+    FSMState,
+    HandDetection,
+    HandLandmark,
+    MotionMetrics,
     MoveEvent,
     MoveHypothesis,
     Point2D,
@@ -32,12 +37,17 @@ __all__ = [
     "AmbiguousMoveError",
     "InvalidObservationError",
     "VideoSourceError",
+    "AutoLabellerSample",
     "BoardGeometry",
     "BoardObservation",
     "BoardOrientation",
     "CellObservation",
     "CellROI",
     "Frame",
+    "FSMState",
+    "HandDetection",
+    "HandLandmark",
+    "MotionMetrics",
     "MoveEvent",
     "MoveHypothesis",
     "Point2D",
@@ -45,4 +55,5 @@ __all__ = [
     "CHESS_SQUARES",
     "PIECE_CLASSES",
 ]
+
 

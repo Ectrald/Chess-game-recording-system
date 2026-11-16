@@ -41,6 +41,22 @@ class BoardOrientation(str, Enum):
     BLACK_BOTTOM = "black_bottom"  # Black camp at bottom (ranks 7-8 at bottom, ranks 1-2 at top)
 
 
+class FSMState(str, Enum):
+    """Finite State Machine states for chess game recording lifecycle."""
+    IDLE = "idle"                      # Waiting for video stream initialization
+    LOCATING_BOARD = "locating_board"  # Initial board localization in progress
+    CALIBRATING = "calibrating"        # Checking homography geometry and orientation
+    STABLE = "stable"                  # Scene is static, current position confirmed
+    MOVING = "moving"                  # Physical hand or piece motion detected
+    SETTLING = "settling"              # Motion ceased, waiting for Delta t_settle debounce
+    VERIFYING = "verifying"            # Accumulating consecutive frames to confirm observation
+    UNCERTAIN = "uncertain"            # Ambiguity / high occlusion / conflict detected
+    BOARD_LOST = "board_lost"          # Board tracking lost or camera displaced
+    PAUSED = "paused"                  # Paused by operator command
+    STOPPED = "stopped"                # Session completed or stopped
+
+
+
 class Point2D(NamedTuple):
     """Immutable 2D point with subpixel float precision."""
     x: float
@@ -361,6 +377,77 @@ class CellObservation(BaseModel):
         return values
 
 
+class HandLandmark(NamedTuple):
+    """Normalized 3D hand landmark coordinate from MediaPipe."""
+    x: float
+    y: float
+    z: float = 0.0
+
+
+class HandDetection(BaseModel):
+    """Detection results from hand tracking and board occlusion estimation."""
+    is_hand_present: bool = Field(description="True if hand was detected intersecting board area")
+    confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Hand detector confidence")
+    landmarks: List[Tuple[float, float, float]] = Field(
+        default_factory=list,
+        description="21 keypoint landmarks in normalized frame space",
+    )
+    bounding_box: Optional[Tuple[int, int, int, int]] = Field(
+        default=None,
+        description="Hand bounding box (xmin, ymin, xmax, ymax) in frame pixels",
+    )
+    occluded_squares: List[str] = Field(
+        default_factory=list,
+        description="List of chess squares (a1..h8) occluded by the hand mask",
+    )
+    occlusion_ratios: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Fraction of area occluded for each square (0.0..1.0)",
+    )
+    polygon_board: Optional[List[Tuple[float, float]]] = Field(
+        default=None,
+        description="Projected hand polygon vertices in normalized 640x640 board space",
+    )
+
+
+class MotionMetrics(BaseModel):
+    """Differential motion detection metrics in normalized board space."""
+    model_config = ConfigDict(arbitrary_types_allowed=True)
+
+    timestamp: float = Field(default=0.0, ge=0.0, description="Frame timestamp in seconds")
+    frame_id: int = Field(default=0, ge=0, description="Monotonically increasing frame index")
+    global_motion_score: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of pixels on 640x640 board exceeding motion threshold",
+    )
+    square_motion_scores: Dict[str, float] = Field(
+        default_factory=dict,
+        description="Per-square motion intensity score for each of the 64 squares",
+    )
+    is_motion_detected: bool = Field(
+        default=False,
+        description="True if global_motion_score exceeds configured threshold",
+    )
+    motion_mask: Optional[np.ndarray] = Field(
+        default=None,
+        exclude=True,
+        description="Binary 640x640 motion mask array (uint8)",
+    )
+
+
+class AutoLabellerSample(BaseModel):
+    """Metadata for an automatically cropped and labeled square training sample."""
+    sample_id: str = Field(description="Unique sample identifier")
+    ply_index: int = Field(ge=0, description="Half-move (ply) index (0 = initial position)")
+    square: str = Field(pattern=r"^[a-h][1-8]$", description="Algebraic square coordinate")
+    piece_class: str = Field(description="Ground truth piece class (empty, wP..bK)")
+    fen_after_ply: str = Field(description="FEN position string after ply completion")
+    timestamp_sec: float = Field(ge=0.0, description="Source video timestamp in seconds")
+    image_rel_path: str = Field(description="Relative file path to saved crop image")
+
+
 class BoardObservation(BaseModel):
     """Observation of the full 8x8 chess board at a specific timestamp.
     
@@ -386,6 +473,23 @@ class BoardObservation(BaseModel):
         le=1.0,
         description="Current geometry stability score S_g",
     )
+    geometry: Optional[BoardGeometry] = Field(
+        default=None,
+        description="Current detected board geometry in frame space",
+    )
+    fsm_state: Optional[FSMState] = Field(
+        default=None,
+        description="Current operational state of the recording FSM",
+    )
+    motion_metrics: Optional[MotionMetrics] = Field(
+        default=None,
+        description="Detailed motion detector metrics for this frame",
+    )
+    hand_detection: Optional[HandDetection] = Field(
+        default=None,
+        description="Hand tracking and occlusion details for this frame",
+    )
+
 
     @field_validator("cells")
     @classmethod
@@ -420,6 +524,47 @@ class BoardObservation(BaseModel):
             if c1.is_occupied != c2.is_occupied or c1.predicted_piece != c2.predicted_piece:
                 changed.append(sq)
         return changed
+
+    @classmethod
+    def create_default(
+        cls,
+        timestamp: float = 0.0,
+        frame_id: int = 0,
+        motion_detected: bool = False,
+        motion_level: float = 0.0,
+        hand_present: bool = False,
+        geometry_confidence: float = 1.0,
+        geometry: Optional[BoardGeometry] = None,
+        fsm_state: Optional[FSMState] = None,
+        motion_metrics: Optional[MotionMetrics] = None,
+        hand_detection: Optional[HandDetection] = None,
+        cells: Optional[Dict[str, CellObservation]] = None,
+    ) -> BoardObservation:
+        """Convenience factory creating a BoardObservation with default 64 empty cells if omitted."""
+        if cells is None:
+            cells = {
+                sq: CellObservation(
+                    square=sq,
+                    probabilities={"empty": 1.0},
+                    confidence=1.0,
+                    is_occupied=False,
+                    is_occluded=False,
+                )
+                for sq in CHESS_SQUARES
+            }
+        return cls(
+            timestamp=timestamp,
+            frame_id=frame_id,
+            cells=cells,
+            motion_detected=motion_detected,
+            motion_level=motion_level,
+            hand_present=hand_present,
+            geometry_confidence=geometry_confidence,
+            geometry=geometry,
+            fsm_state=fsm_state,
+            motion_metrics=motion_metrics,
+            hand_detection=hand_detection,
+        )
 
 
 class MoveHypothesis(BaseModel):

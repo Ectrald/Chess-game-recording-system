@@ -31,11 +31,21 @@ vision:
     mass_distribution_enabled: true
     fallback_orientation: "unknown"  # "unknown" | "white_bottom" | "black_bottom"
 
+  hand_detector:
+    enabled: true
+    min_detection_confidence: 0.60
+    min_tracking_confidence: 0.50
+    dilation_margin_px: 18        # Expansion margin for hand shadow coverage
+    occlusion_threshold: 0.15     # Square occlusion ratio to trigger occluded=True
+
 
 temporal:
   settling_time_sec: 0.8          # Delta t_settle: Debounce settling window in seconds
-  motion_diff_threshold: 0.05     # Optical change threshold to enter MOVING state
-  verifying_stable_frames: 10     # Consecutive stable frames required in VERIFYING
+  motion_diff_threshold: 0.04     # tau_motion: Pixel change ratio to enter MOVING
+  verifying_stable_frames: 8      # N_verify: Consecutive stable frames to confirm state
+  pixel_diff_threshold: 25        # tau_diff: Sensitivity threshold for pixel delta (0..255)
+  motion_ema_alpha: 0.35          # Temporal smoothing alpha for motion score
+
 
 decision:
   weight_visual: 0.50             # w_v: Visual classification likelihood weight
@@ -57,3 +67,10 @@ camera:
   width: 1920                     # Resolution width
   height: 1080                    # Resolution height
   rotate: 0                       # Orientation degrees: 0, 90, 180, 270
+
+labeller:
+  output_dir: "data/dataset"
+  target_crop_size: [112, 112]
+  max_samples_per_move: 64
+  save_format: "png"
+

@@ -6,18 +6,24 @@ import pytest
 from pydantic import ValidationError
 
 from src.core.datatypes import (
+    AutoLabellerSample,
     BoardGeometry,
     BoardObservation,
     BoardOrientation,
     CellObservation,
     CellROI,
     Frame,
+    FSMState,
+    HandDetection,
+    HandLandmark,
+    MotionMetrics,
     MoveEvent,
     MoveHypothesis,
     Point2D,
     Quadrilateral,
     CHESS_SQUARES,
 )
+
 
 
 
@@ -286,3 +292,73 @@ class TestMoveContracts:
                 timestamp=1.0,
                 evidence_frame_id=30,
             )
+
+
+class TestStage2Datatypes:
+    def test_fsm_states(self):
+        assert FSMState.STABLE.value == "stable"
+        assert FSMState.MOVING.value == "moving"
+        assert FSMState.SETTLING.value == "settling"
+        assert FSMState.VERIFYING.value == "verifying"
+        assert FSMState.UNCERTAIN.value == "uncertain"
+        assert FSMState.BOARD_LOST.value == "board_lost"
+
+    def test_hand_detection_contract(self):
+        det = HandDetection(
+            is_hand_present=True,
+            confidence=0.92,
+            landmarks=[(0.5, 0.5, 0.0), (0.6, 0.6, 0.0)],
+            bounding_box=(100, 200, 300, 400),
+            occluded_squares=["e4", "e5"],
+            occlusion_ratios={"e4": 0.45, "e5": 0.20},
+        )
+        assert det.is_hand_present is True
+        assert det.confidence == 0.92
+        assert len(det.occluded_squares) == 2
+        assert det.occlusion_ratios["e4"] == 0.45
+
+    def test_motion_metrics_contract(self):
+        mask = np.zeros((640, 640), dtype=np.uint8)
+        mask[100:150, 100:150] = 255
+        metrics = MotionMetrics(
+            timestamp=1.5,
+            frame_id=45,
+            global_motion_score=0.06,
+            square_motion_scores={"e4": 0.35},
+            is_motion_detected=True,
+            motion_mask=mask,
+        )
+        assert metrics.timestamp == 1.5
+        assert metrics.frame_id == 45
+        assert metrics.global_motion_score == 0.06
+        assert metrics.is_motion_detected is True
+        assert metrics.motion_mask.shape == (640, 640)
+
+    def test_auto_labeller_sample_contract(self):
+        sample = AutoLabellerSample(
+            sample_id="0001_e4_1.50",
+            ply_index=1,
+            square="e4",
+            piece_class="wP",
+            fen_after_ply="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+            timestamp_sec=1.5,
+            image_rel_path="train/wP/0001_e4_1.50.png",
+        )
+        assert sample.sample_id == "0001_e4_1.50"
+        assert sample.square == "e4"
+        assert sample.piece_class == "wP"
+
+    def test_board_observation_with_stage2_fields(self, sample_board_observation):
+        sample_board_observation.fsm_state = FSMState.STABLE
+        sample_board_observation.motion_metrics = MotionMetrics(
+            global_motion_score=0.01,
+            is_motion_detected=False,
+        )
+        sample_board_observation.hand_detection = HandDetection(
+            is_hand_present=False,
+            confidence=0.0,
+        )
+        assert sample_board_observation.fsm_state == FSMState.STABLE
+        assert sample_board_observation.motion_metrics.global_motion_score == 0.01
+        assert sample_board_observation.hand_detection.is_hand_present is False
+
