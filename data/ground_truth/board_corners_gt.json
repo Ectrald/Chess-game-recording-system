@@ -1,0 +1,94 @@
+{
+  "standard_view_01.png": {
+    "corners": [
+      [
+        576.0,
+        162.0
+      ],
+      [
+        1344.0,
+        162.0
+      ],
+      [
+        1651.1999999999998,
+        950.4
+      ],
+      [
+        268.79999999999995,
+        950.4
+      ]
+    ],
+    "description": "Standard perspective view (~65 deg elevation)",
+    "width": 1920,
+    "height": 1080
+  },
+  "perspective_sharp_02.png": {
+    "corners": [
+      [
+        614.4,
+        129.6
+      ],
+      [
+        1305.6,
+        129.6
+      ],
+      [
+        1766.4,
+        972.0
+      ],
+      [
+        153.6,
+        972.0
+      ]
+    ],
+    "description": "Sharp perspective angle (~50 deg elevation)",
+    "width": 1920,
+    "height": 1080
+  },
+  "wooden_table_clutter_03.png": {
+    "corners": [
+      [
+        576.0,
+        162.0
+      ],
+      [
+        1344.0,
+        162.0
+      ],
+      [
+        1651.1999999999998,
+        950.4
+      ],
+      [
+        268.79999999999995,
+        950.4
+      ]
+    ],
+    "description": "Simulated table with lighting gradients and texture noise",
+    "width": 1920,
+    "height": 1080
+  },
+  "aruco_calibration_04.png": {
+    "corners": [
+      [
+        576.0,
+        162.0
+      ],
+      [
+        1344.0,
+        162.0
+      ],
+      [
+        1651.0,
+        950.0
+      ],
+      [
+        269.0,
+        950.0
+      ]
+    ],
+    "description": "Calibration frame with 4 ArUco markers (IDs 0..3)",
+    "width": 1920,
+    "height": 1080
+  }
+}

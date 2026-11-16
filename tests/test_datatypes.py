@@ -8,12 +8,17 @@ from pydantic import ValidationError
 from src.core.datatypes import (
     BoardGeometry,
     BoardObservation,
+    BoardOrientation,
     CellObservation,
+    CellROI,
     Frame,
     MoveEvent,
     MoveHypothesis,
+    Point2D,
+    Quadrilateral,
     CHESS_SQUARES,
 )
+
 
 
 class TestFrameContract:
@@ -68,6 +73,94 @@ class TestBoardGeometryContract:
                 confidence=0.8,
                 is_valid=True,
             )
+
+    def test_self_intersecting_geometry_raises(self):
+        # Butterfly / self-intersecting polygon
+        butterfly_corners = [
+            (0.0, 0.0),
+            (100.0, 100.0),
+            (100.0, 0.0),
+            (0.0, 100.0),
+        ]
+        with pytest.raises(ValidationError):
+            BoardGeometry(
+                corners=butterfly_corners,
+                confidence=0.8,
+                is_valid=True,
+            )
+
+    def test_invalid_allowed_when_is_valid_false(self):
+        butterfly_corners = [
+            (0.0, 0.0),
+            (100.0, 100.0),
+            (100.0, 0.0),
+            (0.0, 100.0),
+        ]
+        # Should NOT raise when is_valid=False (e.g. tracking rejection)
+        geom = BoardGeometry(
+            corners=butterfly_corners,
+            confidence=0.0,
+            is_valid=False,
+        )
+        assert geom.is_valid is False
+
+    def test_enhanced_geometry_fields(self, sample_geometry):
+        assert sample_geometry.corners_image == sample_geometry.corners
+        assert sample_geometry.polygon_area_px2 > 0.0
+        assert sample_geometry.aspect_ratio > 0.0
+        assert sample_geometry.orientation == BoardOrientation.UNKNOWN
+        quad = sample_geometry.to_quadrilateral()
+        assert isinstance(quad, Quadrilateral)
+        assert len(quad.as_list()) == 4
+        assert quad.to_numpy().shape == (4, 2)
+
+
+class TestPointAndQuadrilateralContracts:
+    def test_point2d(self):
+        pt = Point2D(x=12.5, y=34.5)
+        assert pt.x == 12.5
+        assert pt.y == 34.5
+        assert pt.as_tuple() == (12.5, 34.5)
+
+    def test_quadrilateral(self):
+        quad = Quadrilateral(
+            top_left=Point2D(0.0, 0.0),
+            top_right=Point2D(100.0, 0.0),
+            bottom_right=Point2D(100.0, 100.0),
+            bottom_left=Point2D(0.0, 100.0),
+        )
+        as_list = quad.as_list()
+        assert len(as_list) == 4
+        assert as_list[0] == (0.0, 0.0)
+        assert as_list[2] == (100.0, 100.0)
+        np_arr = quad.to_numpy()
+        assert np_arr.shape == (4, 2)
+
+
+class TestCellROIContract:
+    def test_valid_cell_roi(self):
+        roi = CellROI(
+            square="e4",
+            index=28,
+            board_bbox=(320, 320, 400, 400),
+            extended_bbox=(320, 300, 400, 400),
+            center_image=(960.0, 540.0),
+            center_board=(360.0, 360.0),
+        )
+        assert roi.square == "e4"
+        assert roi.index == 28
+        assert roi.board_bbox == (320, 320, 400, 400)
+
+    def test_invalid_cell_roi_square(self):
+        with pytest.raises(ValidationError):
+            CellROI(
+                square="z9",
+                index=0,
+                board_bbox=(0, 0, 80, 80),
+                extended_bbox=(0, 0, 80, 80),
+                center_image=(0.0, 0.0),
+            )
+
 
 
 class TestCellObservationContract:

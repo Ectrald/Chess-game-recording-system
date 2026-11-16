@@ -5,13 +5,32 @@
 
 vision:
   target_board_size: 640          # Normalized board size in pixels (640x640)
-  min_camera_angle: 60.0          # Minimum camera angle in degrees relative to board
+  min_camera_angle: 50.0          # Minimum camera angle in degrees relative to board
   parallax_height_alpha: 1.25     # Vertical crop expansion factor for tall pieces
+  min_board_area_ratio: 0.15      # Minimum board area ratio relative to frame (15%)
   yolo_board_confidence: 0.50     # YOLO corner detector confidence threshold
   classifier_batch_size: 64       # Batch size for 64-cell neural inference
   threshold_occupied: 0.60        # tau_o: Occupancy probability threshold
   threshold_color: 0.70           # tau_c: Piece color classification threshold
   threshold_piece: 0.65           # tau_t: Piece type classification threshold
+
+  localizer:
+    mode: "coarse_to_fine"        # "coarse_to_fine" | "pure_hough" | "manual" | "aruco"
+    yolo_model_path: "data/weights/yolov8n_board.pt"
+    yolo_confidence: 0.40
+    canny_low_threshold: 50
+    canny_high_threshold: 150
+    hough_threshold: 80
+    hough_min_line_length: 100
+    hough_max_line_gap: 20
+    subpixel_win_size: 11
+    max_reprojection_error_px: 2.5
+
+  orientation:
+    color_check_enabled: true
+    mass_distribution_enabled: true
+    fallback_orientation: "unknown"  # "unknown" | "white_bottom" | "black_bottom"
+
 
 temporal:
   settling_time_sec: 0.8          # Delta t_settle: Debounce settling window in seconds
