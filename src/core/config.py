@@ -9,7 +9,8 @@ from __future__ import annotations
 import math
 import os
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
+
 import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
@@ -46,6 +47,23 @@ class OrientationConfig(BaseModel):
     fallback_orientation: str = Field(default="unknown")
 
 
+class HandDetectorConfig(BaseModel):
+    """Configuration for hand detection and occlusion polygon generation."""
+    enabled: bool = Field(default=True, description="Enable MediaPipe hand detector")
+    min_detection_confidence: float = Field(default=0.60, ge=0.0, le=1.0)
+    min_tracking_confidence: float = Field(default=0.50, ge=0.0, le=1.0)
+    dilation_margin_px: int = Field(default=18, ge=0, le=100, description="Dilation margin for hand shadow")
+    occlusion_threshold: float = Field(default=0.15, ge=0.01, le=1.0, description="Cell overlap ratio to flag occluded")
+
+
+class LabellerConfig(BaseModel):
+    """Configuration for automated dataset collection and labelling (AutoLabeller)."""
+    output_dir: str = Field(default="data/dataset", description="Root directory to store extracted crops")
+    target_crop_size: Tuple[int, int] = Field(default=(112, 112), description="Output crop resolution (W, H)")
+    max_samples_per_move: int = Field(default=64, ge=1, le=64, description="Maximum squares saved per move")
+    save_format: str = Field(default="png", description="Image save format: 'png' or 'jpg'")
+
+
 class VisionConfig(BaseModel):
     """Configuration for visual perception, board normalization and piece classification."""
     target_board_size: int = Field(
@@ -74,6 +92,7 @@ class VisionConfig(BaseModel):
     )
     localizer: LocalizerConfig = Field(default_factory=LocalizerConfig)
     orientation: OrientationConfig = Field(default_factory=OrientationConfig)
+    hand_detector: HandDetectorConfig = Field(default_factory=HandDetectorConfig)
     yolo_board_confidence: float = Field(
         default=0.50,
         ge=0.1,
@@ -106,7 +125,6 @@ class VisionConfig(BaseModel):
     )
 
 
-
 class TemporalConfig(BaseModel):
     """Configuration for temporal state machine, debounce window and motion detection."""
     settling_time_sec: float = Field(
@@ -116,17 +134,30 @@ class TemporalConfig(BaseModel):
         description="Delta t_settle: Debouncing settling window in seconds after motion stops",
     )
     motion_diff_threshold: float = Field(
-        default=0.05,
+        default=0.04,
         gt=0.0,
         le=1.0,
         description="Differential optical change threshold to enter MOVING state",
     )
     verifying_stable_frames: int = Field(
-        default=10,
+        default=8,
         ge=1,
         le=60,
         description="Number of consecutive stable frames required to confirm VERIFYING state",
     )
+    pixel_diff_threshold: int = Field(
+        default=25,
+        ge=1,
+        le=255,
+        description="Sensitivity threshold tau_diff for pixel luminance delta (0..255)",
+    )
+    motion_ema_alpha: float = Field(
+        default=0.35,
+        ge=0.01,
+        le=1.0,
+        description="Exponential moving average alpha factor for temporal motion smoothing",
+    )
+
 
 
 class DecisionConfig(BaseModel):
@@ -256,6 +287,8 @@ class AppConfig(BaseModel):
     decision: DecisionConfig = Field(default_factory=DecisionConfig)
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     camera: CameraConfig = Field(default_factory=CameraConfig)
+    labeller: LabellerConfig = Field(default_factory=LabellerConfig)
+
 
 
 def _deep_merge(target: Dict[str, Any], source: Dict[str, Any]) -> Dict[str, Any]:

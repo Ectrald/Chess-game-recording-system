@@ -16,7 +16,18 @@ from src.vision.corner_refinement import (
     detect_corners_contour_hull,
 )
 from src.vision.diagnostics import BoardDiagnosticVisualizer, draw_board_diagnostics
+from src.vision.hand_detector import (
+    BaseHandDetector,
+    ColorSilhouetteHandDetector,
+    DummyHandDetector,
+    HandDetector,
+    MediaPipeHandDetector,
+    MockHandDetector,
+    compute_occlusion_from_board_mask,
+    create_hand_detector,
+)
 from src.vision.homography import GeometryTransformer
+from src.vision.motion_detector import MotionDetector
 from src.vision.orientation import OrientationResolver
 from src.vision.roi_extractor import CellRoiExtractor
 from src.vision.synthetic_board import SyntheticBoardGenerator
@@ -49,5 +60,14 @@ __all__ = [
     "OpenCVVideoAdapter",
     "SyntheticVideoAdapter",
     "create_video_adapter",
+    "MotionDetector",
+    "BaseHandDetector",
+    "HandDetector",
+    "MediaPipeHandDetector",
+    "ColorSilhouetteHandDetector",
+    "MockHandDetector",
+    "DummyHandDetector",
+    "create_hand_detector",
+    "compute_occlusion_from_board_mask",
 ]
 
