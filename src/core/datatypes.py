@@ -8,8 +8,10 @@ Defines Pydantic v2 data models mapped directly to:
 
 from __future__ import annotations
 
+from enum import Enum
+import math
 import re
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Literal, NamedTuple, Optional, Set, Tuple
 import numpy as np
 from pydantic import (
     BaseModel,
@@ -30,6 +32,42 @@ PIECE_CLASSES: List[str] = [
     "wP", "wN", "wB", "wR", "wQ", "wK",
     "bP", "bN", "bB", "bR", "bQ", "bK",
 ]
+
+
+class BoardOrientation(str, Enum):
+    """Board perspective orientation relative to player camps."""
+    UNKNOWN = "unknown"
+    WHITE_BOTTOM = "white_bottom"  # White camp at bottom (ranks 1-2 at bottom, ranks 7-8 at top)
+    BLACK_BOTTOM = "black_bottom"  # Black camp at bottom (ranks 7-8 at bottom, ranks 1-2 at top)
+
+
+class Point2D(NamedTuple):
+    """Immutable 2D point with subpixel float precision."""
+    x: float
+    y: float
+
+    def as_tuple(self) -> Tuple[float, float]:
+        return (float(self.x), float(self.y))
+
+
+class Quadrilateral(NamedTuple):
+    """4-vertex polygon representing the detected board boundary."""
+    top_left: Point2D
+    top_right: Point2D
+    bottom_right: Point2D
+    bottom_left: Point2D
+
+    def as_list(self) -> List[Tuple[float, float]]:
+        return [
+            self.top_left.as_tuple(),
+            self.top_right.as_tuple(),
+            self.bottom_right.as_tuple(),
+            self.bottom_left.as_tuple(),
+        ]
+
+    def to_numpy(self) -> np.ndarray:
+        return np.array(self.as_list(), dtype=np.float32)
+
 
 
 class Frame(BaseModel):
@@ -77,37 +115,149 @@ class Frame(BaseModel):
 class BoardGeometry(BaseModel):
     """Geometric representation of the detected chess board in the frame.
     
-    Mapped to Table 2.2 'BoardGeometry': corners[4], homography matrix, confidence.
+    Mapped to Table 2.2 'BoardGeometry': corners[4], homography matrix, confidence,
+    and STAGE_1.md Section 3.2.
     """
     corners: List[Tuple[float, float]] = Field(
         min_length=4,
         max_length=4,
         description="4 corners [(x,y)] ordered as Top-Left, Top-Right, Bottom-Right, Bottom-Left",
     )
+    corners_image: Optional[List[Tuple[float, float]]] = Field(
+        default=None,
+        min_length=4,
+        max_length=4,
+        description="4 subpixel corners [TL, TR, BR, BL] in source frame coordinate space",
+    )
     homography_matrix: Optional[List[List[float]]] = Field(
         default=None,
-        description="3x3 projective transformation matrix to normalized 640x640 space",
+        description="3x3 projective transformation matrix to normalized 640x640 space (image -> board)",
+    )
+    inverse_homography: Optional[List[List[float]]] = Field(
+        default=None,
+        description="Inverse 3x3 homography matrix (board -> image)",
+    )
+    target_size: int = Field(
+        default=640,
+        ge=64,
+        description="Canonical edge resolution of normalized square board (default 640)",
+    )
+    orientation: BoardOrientation = Field(
+        default=BoardOrientation.UNKNOWN,
+        description="Resolved board orientation (white_bottom, black_bottom, unknown)",
+    )
+    detection_method: Literal["yolo_hough", "pure_hough", "manual", "aruco", "synthetic", "unknown"] = Field(
+        default="unknown",
+        description="Detection method used to obtain current geometry",
+    )
+    reprojection_error_px: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Root mean square reprojection error of grid inliers (px)",
+    )
+    polygon_area_px2: float = Field(
+        default=1.0,
+        gt=0.0,
+        description="Area of board quadrilateral in image frame space (px^2)",
+    )
+    aspect_ratio: float = Field(
+        default=1.0,
+        gt=0.0,
+        description="Aspect ratio (average width / average height) of detected quadrilateral",
+    )
+    geometry_quality: float = Field(
+        default=1.0,
+        ge=0.0,
+        le=1.0,
+        description="Integral geometric reliability metric S_g in [0, 1]",
     )
     confidence: float = Field(
+        default=1.0,
         ge=0.0,
         le=1.0,
         description="Geometric quality measure S_g (convexity, parallelism, area)",
     )
     is_valid: bool = Field(
-        description="True if geometry passes non-crossing and positive area constraints",
+        default=True,
+        description="True if geometry passes non-crossing, convexity and positive area constraints",
     )
     orientation_calibrated: bool = Field(
         default=False,
         description="True if a1-h8 orientation has been verified against FIDE rules",
     )
 
-    @field_validator("homography_matrix")
+    @field_validator("homography_matrix", "inverse_homography")
     @classmethod
     def validate_homography_shape(cls, v: Optional[List[List[float]]]) -> Optional[List[List[float]]]:
         if v is not None:
             if len(v) != 3 or any(len(row) != 3 for row in v):
                 raise ValueError("Homography matrix must be exactly 3x3")
         return v
+
+    @model_validator(mode="before")
+    @classmethod
+    def sync_and_compute_geometry(cls, values: Any) -> Any:
+        if isinstance(values, dict):
+            # Sync corners and corners_image
+            if "corners" in values and "corners_image" not in values:
+                values["corners_image"] = values["corners"]
+            elif "corners_image" in values and "corners" not in values:
+                values["corners"] = values["corners_image"]
+
+            # Sync confidence and geometry_quality
+            if "confidence" in values and "geometry_quality" not in values:
+                values["geometry_quality"] = values["confidence"]
+            elif "geometry_quality" in values and "confidence" not in values:
+                values["confidence"] = values["geometry_quality"]
+
+            corners = values.get("corners")
+            if corners and len(corners) == 4:
+                # Compute Shoelace polygon area
+                area = 0.5 * abs(
+                    sum(
+                        corners[i][0] * corners[(i + 1) % 4][1]
+                        - corners[(i + 1) % 4][0] * corners[i][1]
+                        for i in range(4)
+                    )
+                )
+                if "polygon_area_px2" not in values:
+                    values["polygon_area_px2"] = max(float(area), 1e-4)
+
+                # Compute approximate aspect ratio
+                if "aspect_ratio" not in values:
+                    w1 = math.hypot(corners[1][0] - corners[0][0], corners[1][1] - corners[0][1])
+                    w2 = math.hypot(corners[2][0] - corners[3][0], corners[2][1] - corners[3][1])
+                    h1 = math.hypot(corners[3][0] - corners[0][0], corners[3][1] - corners[0][1])
+                    h2 = math.hypot(corners[2][0] - corners[1][0], corners[2][1] - corners[1][1])
+                    avg_w = (w1 + w2) / 2.0
+                    avg_h = max((h1 + h2) / 2.0, 1e-4)
+                    values["aspect_ratio"] = max(float(avg_w / avg_h), 1e-4)
+        return values
+
+    @model_validator(mode="after")
+    def validate_convexity_and_validity(self) -> BoardGeometry:
+        if self.is_valid and self.corners and len(self.corners) == 4:
+            pts = self.corners
+            cross_products: List[float] = []
+            for i in range(4):
+                p0 = pts[i]
+                p1 = pts[(i + 1) % 4]
+                p2 = pts[(i + 2) % 4]
+                dx1 = p1[0] - p0[0]
+                dy1 = p1[1] - p0[1]
+                dx2 = p2[0] - p1[0]
+                dy2 = p2[1] - p1[1]
+                cross = dx1 * dy2 - dy1 * dx2
+                cross_products.append(cross)
+
+            all_pos = all(cp > 1e-5 for cp in cross_products)
+            all_neg = all(cp < -1e-5 for cp in cross_products)
+            if not (all_pos or all_neg):
+                raise ValueError(
+                    f"Board corners must form a strictly convex non-self-intersecting quadrilateral. "
+                    f"Cross products: {cross_products}"
+                )
+        return self
 
     def to_numpy_corners(self) -> np.ndarray:
         """Returns corners as float32 np.ndarray of shape (4, 2)."""
@@ -118,6 +268,47 @@ class BoardGeometry(BaseModel):
         if self.homography_matrix is None:
             return None
         return np.array(self.homography_matrix, dtype=np.float64)
+
+    def to_numpy_inverse_homography(self) -> Optional[np.ndarray]:
+        """Returns inverse 3x3 homography matrix as float64 np.ndarray."""
+        if self.inverse_homography is None:
+            return None
+        return np.array(self.inverse_homography, dtype=np.float64)
+
+    def to_quadrilateral(self) -> Quadrilateral:
+        """Converts corners to typed Quadrilateral model."""
+        return Quadrilateral(
+            top_left=Point2D(x=self.corners[0][0], y=self.corners[0][1]),
+            top_right=Point2D(x=self.corners[1][0], y=self.corners[1][1]),
+            bottom_right=Point2D(x=self.corners[2][0], y=self.corners[2][1]),
+            bottom_left=Point2D(x=self.corners[3][0], y=self.corners[3][1]),
+        )
+
+
+class CellROI(BaseModel):
+    """Region of interest for an individual chess square on the board."""
+    square: str = Field(
+        pattern=r"^[a-h][1-8]$",
+        description="Cell coordinate in standard algebraic notation (e.g. 'e4')",
+    )
+    index: int = Field(
+        ge=0,
+        le=63,
+        description="Square index 0..63 in canonical order (a1=0, b1=1, ..., h8=63)",
+    )
+    board_bbox: Tuple[int, int, int, int] = Field(
+        description="Bounding box (x_min, y_min, x_max, y_max) in normalized 640x640 space",
+    )
+    extended_bbox: Tuple[int, int, int, int] = Field(
+        description="Parallax-compensated bounding box with alpha_height expansion",
+    )
+    center_image: Tuple[float, float] = Field(
+        description="Square center projected into source frame coordinates (px)",
+    )
+    center_board: Tuple[float, float] = Field(
+        default=(0.0, 0.0),
+        description="Square center in normalized 640x640 coordinates (px)",
+    )
 
 
 class CellObservation(BaseModel):

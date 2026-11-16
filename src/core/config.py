@@ -14,6 +14,38 @@ import yaml
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+class LocalizerConfig(BaseModel):
+    """Configuration for board detection and corner refinement."""
+    mode: str = Field(
+        default="coarse_to_fine",
+        description="Localizer strategy: 'coarse_to_fine', 'pure_hough', 'manual', 'aruco'",
+    )
+    yolo_model_path: str = Field(
+        default="data/weights/yolov8n_board.pt",
+        description="Path to pretrained YOLOv8 board detector weights",
+    )
+    yolo_confidence: float = Field(
+        default=0.40,
+        ge=0.05,
+        le=1.0,
+        description="Confidence threshold for YOLO bounding box detection",
+    )
+    canny_low_threshold: int = Field(default=50, ge=1, le=255)
+    canny_high_threshold: int = Field(default=150, ge=1, le=255)
+    hough_threshold: int = Field(default=80, ge=1)
+    hough_min_line_length: int = Field(default=100, ge=1)
+    hough_max_line_gap: int = Field(default=20, ge=0)
+    subpixel_win_size: int = Field(default=11, ge=3)
+    max_reprojection_error_px: float = Field(default=2.5, ge=0.1)
+
+
+class OrientationConfig(BaseModel):
+    """Configuration for board perspective orientation resolution."""
+    color_check_enabled: bool = Field(default=True)
+    mass_distribution_enabled: bool = Field(default=True)
+    fallback_orientation: str = Field(default="unknown")
+
+
 class VisionConfig(BaseModel):
     """Configuration for visual perception, board normalization and piece classification."""
     target_board_size: int = Field(
@@ -23,7 +55,7 @@ class VisionConfig(BaseModel):
         description="Target normalized board resolution in pixels (NxN, default 640x640)",
     )
     min_camera_angle: float = Field(
-        default=60.0,
+        default=50.0,
         ge=30.0,
         le=90.0,
         description="Minimum permitted camera viewing angle in degrees relative to board plane",
@@ -34,6 +66,14 @@ class VisionConfig(BaseModel):
         le=2.0,
         description="Cell ROI vertical expansion factor alpha to compensate piece height parallax",
     )
+    min_board_area_ratio: float = Field(
+        default=0.15,
+        ge=0.01,
+        le=0.90,
+        description="Minimum permitted board polygon area as fraction of frame area",
+    )
+    localizer: LocalizerConfig = Field(default_factory=LocalizerConfig)
+    orientation: OrientationConfig = Field(default_factory=OrientationConfig)
     yolo_board_confidence: float = Field(
         default=0.50,
         ge=0.1,
@@ -64,6 +104,7 @@ class VisionConfig(BaseModel):
         le=1.0,
         description="tau_t: Piece type classification confidence threshold",
     )
+
 
 
 class TemporalConfig(BaseModel):
