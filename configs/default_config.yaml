@@ -74,3 +74,29 @@ labeller:
   max_samples_per_move: 64
   save_format: "png"
 
+piece_classifier:
+  enabled: true
+  model_path: "models/piece_classifier.onnx"
+  architecture: "chesscog"
+  backend: "auto"
+  batch_size: 64
+  input_size: [112, 112]
+  occupancy_threshold: 0.50
+  confidence_threshold: 0.60
+  device: "cpu"
+
+training:
+  dataset_dir: "data/dataset"
+  output_dir: "models/checkpoints"
+  architecture: "efficientnet_b0"
+  batch_size: 32
+  epochs: 30
+  learning_rate: 0.001
+  weight_decay: 0.0001
+  patience: 5
+  val_split_ratio: 0.15
+  test_split_ratio: 0.15
+  seed: 42
+  experiment_name: "chess_piece_classification"
+
+

@@ -85,3 +85,29 @@ class TestConfigValidation:
 
         reloaded = load_config(out_file)
         assert reloaded.vision.target_board_size == config.vision.target_board_size
+
+    def test_stage3_classifier_and_training_config(self):
+        from src.core.config import ClassifierConfig, TrainingConfig
+
+        c_cfg = ClassifierConfig(
+            model_path="models/custom.onnx",
+            architecture="efficientnet_b0",
+            occupancy_threshold=0.55,
+        )
+        assert c_cfg.model_path == "models/custom.onnx"
+        assert c_cfg.architecture == "efficientnet_b0"
+        assert c_cfg.occupancy_threshold == 0.55
+
+        t_cfg = TrainingConfig(
+            epochs=20,
+            learning_rate=5e-4,
+            batch_size=64,
+        )
+        assert t_cfg.epochs == 20
+        assert t_cfg.learning_rate == 5e-4
+        assert t_cfg.batch_size == 64
+
+        app_cfg = AppConfig(piece_classifier=c_cfg, training=t_cfg)
+        assert app_cfg.piece_classifier.occupancy_threshold == 0.55
+        assert app_cfg.training.epochs == 20
+

@@ -362,3 +362,46 @@ class TestStage2Datatypes:
         assert sample_board_observation.motion_metrics.global_motion_score == 0.01
         assert sample_board_observation.hand_detection.is_hand_present is False
 
+
+class TestStage3Datatypes:
+    def test_model_manifest_contract(self):
+        from src.core.datatypes import ModelManifest, PIECE_CLASSES
+
+        manifest = ModelManifest(
+            model_name="piece_classifier_v1",
+            architecture="efficientnet_b0",
+            format="onnx",
+            val_macro_f1=0.965,
+            test_macro_f1=0.952,
+            latency_cpu_ms=14.8,
+            trained_at="2026-11-18T12:00:00Z",
+        )
+        assert manifest.model_name == "piece_classifier_v1"
+        assert manifest.architecture == "efficientnet_b0"
+        assert manifest.format == "onnx"
+        assert manifest.input_shape == [64, 3, 112, 112]
+        assert manifest.classes == PIECE_CLASSES
+        assert manifest.val_macro_f1 == 0.965
+        assert manifest.test_macro_f1 == 0.952
+        assert manifest.latency_cpu_ms == 14.8
+
+    def test_evaluation_report_contract(self):
+        from src.core.datatypes import EvaluationReport
+
+        report = EvaluationReport(
+            overall_accuracy=0.98,
+            occupancy_accuracy=0.995,
+            color_accuracy=0.99,
+            macro_precision=0.97,
+            macro_recall=0.96,
+            macro_f1=0.965,
+            per_class_f1={"empty": 0.999, "wP": 0.98},
+            confusion_matrix=[[10, 0], [0, 10]],
+            expected_calibration_error=0.025,
+        )
+        assert report.overall_accuracy == 0.98
+        assert report.occupancy_accuracy == 0.995
+        assert report.macro_f1 == 0.965
+        assert report.expected_calibration_error == 0.025
+
+
