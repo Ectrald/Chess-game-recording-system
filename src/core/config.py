@@ -64,6 +64,51 @@ class LabellerConfig(BaseModel):
     save_format: str = Field(default="png", description="Image save format: 'png' or 'jpg'")
 
 
+class ClassifierConfig(BaseModel):
+    """Configuration for neural piece classifier runtime inference."""
+    enabled: bool = Field(default=True, description="Enable neural piece classification")
+    model_path: str = Field(
+        default="models/piece_classifier.onnx",
+        description="Path to ONNX weights model file",
+    )
+    architecture: str = Field(
+        default="chesscog",
+        description="Backbone architecture: 'chesscog', 'efficientnet_b0', 'resnet18', or 'mock'",
+    )
+    backend: str = Field(
+        default="auto",
+        description="Inference engine backend: 'onnx', 'torch', 'mock', or 'auto'",
+    )
+    batch_size: int = Field(default=64, ge=1, le=64, description="Inference batch size")
+    input_size: Tuple[int, int] = Field(default=(112, 112), description="Square crop input size (W, H)")
+    occupancy_threshold: float = Field(
+        default=0.50, ge=0.01, le=0.99,
+        description="Occupancy probability threshold tau_o",
+    )
+    confidence_threshold: float = Field(
+        default=0.60, ge=0.01, le=0.99,
+        description="Piece type confidence threshold",
+    )
+    device: str = Field(default="cpu", description="Execution device: 'cpu' or 'cuda'")
+
+
+class TrainingConfig(BaseModel):
+    """Configuration for model training loop, dataset splits and MLOps logging."""
+    dataset_dir: str = Field(default="data/dataset", description="Root dataset directory")
+    output_dir: str = Field(default="models/checkpoints", description="Model checkpoint export directory")
+    architecture: str = Field(default="efficientnet_b0", description="Target backbone: 'efficientnet_b0' or 'resnet18'")
+    batch_size: int = Field(default=32, ge=1, le=256, description="Training batch size")
+    epochs: int = Field(default=30, ge=1, le=200, description="Maximum training epochs")
+    learning_rate: float = Field(default=1e-3, ge=1e-6, le=1e-1, description="Initial learning rate")
+    weight_decay: float = Field(default=1e-4, ge=0.0, le=1e-2, description="L2 weight decay regularization")
+    patience: int = Field(default=5, ge=1, le=20, description="Early stopping patience epochs")
+    val_split_ratio: float = Field(default=0.15, ge=0.05, le=0.30, description="Validation split ratio")
+    test_split_ratio: float = Field(default=0.15, ge=0.05, le=0.30, description="Test split ratio for unseen sets")
+    seed: int = Field(default=42, description="Random generator seed for reproducibility")
+    mlflow_tracking_uri: Optional[str] = Field(default=None, description="MLflow tracking server URI")
+    experiment_name: str = Field(default="chess_piece_classification", description="MLflow experiment name")
+
+
 class VisionConfig(BaseModel):
     """Configuration for visual perception, board normalization and piece classification."""
     target_board_size: int = Field(
@@ -288,6 +333,8 @@ class AppConfig(BaseModel):
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     camera: CameraConfig = Field(default_factory=CameraConfig)
     labeller: LabellerConfig = Field(default_factory=LabellerConfig)
+    piece_classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
+    training: TrainingConfig = Field(default_factory=TrainingConfig)
 
 
 

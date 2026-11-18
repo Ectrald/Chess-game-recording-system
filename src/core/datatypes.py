@@ -609,3 +609,30 @@ class MoveEvent(BaseModel):
         if len(ranks) != 8:
             raise ValueError(f"FEN board must have 8 ranks, got {len(ranks)}: '{parts[0]}'")
         return v
+
+
+class ModelManifest(BaseModel):
+    """Metadata describing a compiled piece classifier model artifact."""
+    model_name: str = Field(description="Unique model identifier")
+    architecture: str = Field(description="Backbone network architecture")
+    format: str = Field(default="onnx", description="Artifact format: 'onnx' or 'pytorch'")
+    input_shape: List[int] = Field(default_factory=lambda: [64, 3, 112, 112], description="Input tensor shape [B, C, H, W]")
+    classes: List[str] = Field(default_factory=lambda: list(PIECE_CLASSES), description="13 canonical piece classes")
+    val_macro_f1: float = Field(default=0.0, ge=0.0, le=1.0, description="Validation Macro F1 score")
+    test_macro_f1: float = Field(default=0.0, ge=0.0, le=1.0, description="Test Macro F1 score on unseen sets")
+    latency_cpu_ms: float = Field(default=0.0, ge=0.0, description="Average batch-64 inference latency on CPU (ms)")
+    trained_at: str = Field(default="", description="ISO 8601 creation/training timestamp")
+
+
+class EvaluationReport(BaseModel):
+    """Comprehensive evaluation metrics report for the 13-class piece classifier."""
+    overall_accuracy: float = Field(default=0.0, ge=0.0, le=1.0, description="Overall classification accuracy")
+    occupancy_accuracy: float = Field(default=0.0, ge=0.0, le=1.0, description="Binary empty/occupied accuracy")
+    color_accuracy: float = Field(default=0.0, ge=0.0, le=1.0, description="Color classification accuracy")
+    macro_precision: float = Field(default=0.0, ge=0.0, le=1.0, description="Macro-averaged precision")
+    macro_recall: float = Field(default=0.0, ge=0.0, le=1.0, description="Macro-averaged recall")
+    macro_f1: float = Field(default=0.0, ge=0.0, le=1.0, description="Macro-averaged F1 score across all 13 classes")
+    per_class_f1: Dict[str, float] = Field(default_factory=dict, description="F1 score per piece class")
+    confusion_matrix: List[List[int]] = Field(default_factory=list, description="13x13 confusion matrix")
+    expected_calibration_error: float = Field(default=0.0, ge=0.0, le=1.0, description="Expected Calibration Error (ECE)")
+
