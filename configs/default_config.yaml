@@ -61,6 +61,18 @@ analysis:
   stockfish_depth: 15             # Engine search depth
   stockfish_path: null            # Path to Stockfish executable (null = auto-discover)
   blunder_threshold_cp: 150       # Blunder threshold in centipawns (150 = 1.5 pawns)
+  timeout_sec: 2.5                # Max allowed computation time per move in seconds
+  max_queue_size: 10              # Bounded queue buffer size for background analysis
+  threads: 1                      # CPU threads for engine
+  hash_mb: 32                     # Hash table memory in MB
+
+persistence:
+  base_dir: "data/sessions"           # Root directory for game sessions
+  enable_checksum: true               # Cryptographic SHA-256 hash chaining
+  evidence_format: "jpg"              # Board evidence frame format
+  evidence_retention: "selective"     # 'all', 'selective', or 'none'
+  save_full_frame_on_uncertain: true  # Save full uncompressed frame on UNCERTAIN
+  sync_to_disk: true                  # Atomic flush and fsync after each move
 
 camera:
   source_type: "synthetic"        # 'synthetic', 'file', 'device', 'rtsp'

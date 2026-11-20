@@ -631,6 +631,8 @@ class MoveEvent(BaseModel):
     idempotency_key: Optional[str] = Field(default=None, description="Idempotency key to deduplicate move event")
     eval_centipawns: Optional[int] = Field(default=None, description="Stockfish evaluation in centipawns")
     is_blunder: Optional[bool] = Field(default=None, description="True if move significantly reduced eval")
+    prev_event_hash: Optional[str] = Field(default=None, description="SHA-256 hash of previous event in journal")
+    event_hash: Optional[str] = Field(default=None, description="Self SHA-256 hash for cryptographic audit integrity")
 
     @field_validator("fen_before", "fen_after")
     @classmethod
@@ -668,4 +670,66 @@ class EvaluationReport(BaseModel):
     per_class_f1: Dict[str, float] = Field(default_factory=dict, description="F1 score per piece class")
     confusion_matrix: List[List[int]] = Field(default_factory=list, description="13x13 confusion matrix")
     expected_calibration_error: float = Field(default=0.0, ge=0.0, le=1.0, description="Expected Calibration Error (ECE)")
+
+
+class MoveQuality(str, Enum):
+    """Classification of chess move quality by Stockfish centipawn delta."""
+    BEST = "best"              # Best engine move (delta >= -10 cp or matches top PV)
+    EXCELLENT = "excellent"    # Near optimal move (delta >= -30 cp)
+    GOOD = "good"              # Sound playable move (delta >= -60 cp)
+    INACCURACY = "inaccuracy"  # Inaccuracy (delta >= -100 cp)
+    MISTAKE = "mistake"        # Mistake (delta >= -250 cp)
+    BLUNDER = "blunder"        # Critical blunder (delta < -250 cp or missed mate)
+    BOOK = "book"              # Standard opening book move
+
+
+class EngineTaskStatus(str, Enum):
+    """Lifecycle status of an asynchronous engine analysis task."""
+    QUEUED = "queued"          # In queue waiting for analysis worker
+    RUNNING = "running"        # Currently being evaluated by Stockfish
+    COMPLETED = "completed"    # Successfully evaluated
+    FAILED = "failed"          # Evaluation failed (process crash or error)
+    TIMED_OUT = "timed_out"    # Evaluation exceeded timeout limit
+    SKIPPED = "skipped"        # Skipped due to bounded queue overflow
+    DISABLED = "disabled"      # Stockfish analysis is disabled in configuration
+
+
+class EngineEvaluation(BaseModel):
+    """Point-in-time board position evaluation from Stockfish."""
+    eval_cp: Optional[int] = Field(default=None, description="Evaluation in centipawns from White perspective")
+    mate_in: Optional[int] = Field(default=None, description="Half-moves to checkmate (+N White wins, -N Black wins)")
+    best_move_uci: Optional[str] = Field(default=None, description="Recommended best move in UCI notation")
+    pv: List[str] = Field(default_factory=list, description="Principal variation moves sequence in UCI")
+    depth: int = Field(default=0, ge=0, description="Search depth reached in plies")
+    nodes: int = Field(default=0, ge=0, description="Number of tree nodes evaluated")
+    time_sec: float = Field(default=0.0, ge=0.0, description="Computation time consumed in seconds")
+
+
+class AnalysisResult(BaseModel):
+    """Comprehensive post-move evaluation comparing pre-move and post-move positions."""
+    event_id: str = Field(description="UUID of the analyzed MoveEvent")
+    ply: int = Field(ge=1, description="Half-move index")
+    move_uci: str = Field(description="Played move in UCI format")
+    status: EngineTaskStatus = Field(description="Final task execution status")
+    eval_before: Optional[EngineEvaluation] = Field(default=None, description="Position eval prior to move")
+    eval_after: Optional[EngineEvaluation] = Field(default=None, description="Position eval after move")
+    eval_loss_cp: Optional[int] = Field(default=None, description="Centipawn loss normalized to mover's perspective")
+    quality: Optional[MoveQuality] = Field(default=None, description="Categorized move quality")
+    is_blunder: bool = Field(default=False, description="True if move is classified as a blunder")
+    error_message: Optional[str] = Field(default=None, description="Diagnostic error details if failed")
+
+
+class SessionManifest(BaseModel):
+    """Manifest describing a recorded chess game session and persistence journal."""
+    session_id: str = Field(description="Unique session identifier string")
+    created_at: str = Field(description="ISO 8601 creation timestamp")
+    player_white: str = Field(default="White Player", description="White player name")
+    player_black: str = Field(default="Black Player", description="Black player name")
+    initial_fen: str = Field(default="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", description="Initial FEN")
+    current_fen: str = Field(description="Current / final board FEN position")
+    total_plies: int = Field(default=0, ge=0, description="Total count of confirmed half-moves")
+    journal_path: str = Field(description="Relative path to events.jsonl")
+    pgn_path: str = Field(description="Relative path to game.pgn")
+    journal_checksum: str = Field(default="", description="Cumulative SHA-256 checksum of the journal")
+    is_completed: bool = Field(default=False, description="True if game is officially finished")
 
