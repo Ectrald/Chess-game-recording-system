@@ -288,6 +288,58 @@ class AnalysisConfig(BaseModel):
         le=1000,
         description="Evaluation drop in centipawns classified as a blunder (e.g. 150 = 1.5 pawns)",
     )
+    timeout_sec: float = Field(
+        default=2.5,
+        gt=0.1,
+        le=30.0,
+        description="Maximum allowed analysis calculation time per position in seconds",
+    )
+    max_queue_size: int = Field(
+        default=10,
+        ge=1,
+        le=100,
+        description="Maximum bounded capacity of the background analysis queue",
+    )
+    threads: int = Field(
+        default=1,
+        ge=1,
+        le=16,
+        description="Number of CPU threads allocated to Stockfish",
+    )
+    hash_mb: int = Field(
+        default=32,
+        ge=8,
+        le=1024,
+        description="Size of Stockfish transposition table memory in MB",
+    )
+
+
+class PersistenceConfig(BaseModel):
+    """Configuration for event journal persistence and evidence artifact retention."""
+    base_dir: str = Field(
+        default="data/sessions",
+        description="Root directory for saving game session journals and evidence",
+    )
+    enable_checksum: bool = Field(
+        default=True,
+        description="Whether to maintain cryptographic SHA-256 integrity hash chaining",
+    )
+    evidence_format: str = Field(
+        default="jpg",
+        description="Format for saving board evidence frames: 'jpg' or 'png'",
+    )
+    evidence_retention: str = Field(
+        default="selective",
+        description="Evidence retention policy: 'all', 'selective', or 'none'",
+    )
+    save_full_frame_on_uncertain: bool = Field(
+        default=True,
+        description="Whether to preserve uncompressed full frames for UNCERTAIN moves",
+    )
+    sync_to_disk: bool = Field(
+        default=True,
+        description="Whether to perform os.fsync after every atomic move event write",
+    )
 
 
 class CameraConfig(BaseModel):
@@ -343,6 +395,7 @@ class AppConfig(BaseModel):
     temporal: TemporalConfig = Field(default_factory=TemporalConfig)
     decision: DecisionConfig = Field(default_factory=DecisionConfig)
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
+    persistence: PersistenceConfig = Field(default_factory=PersistenceConfig)
     camera: CameraConfig = Field(default_factory=CameraConfig)
     labeller: LabellerConfig = Field(default_factory=LabellerConfig)
     piece_classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
