@@ -241,6 +241,18 @@ class DecisionConfig(BaseModel):
         le=1.0,
         description="Delta: Minimum score margin between top-1 and top-2 candidate moves",
     )
+    min_acceptance_score: float = Field(
+        default=0.55,
+        ge=0.0,
+        le=1.0,
+        description="tau_accept: Minimum absolute composite score required for candidate acceptance",
+    )
+    max_occlusion_threshold: float = Field(
+        default=0.50,
+        ge=0.0,
+        le=1.0,
+        description="tau_occ_crit: Maximum permitted occlusion ratio on affected squares",
+    )
 
     @model_validator(mode="after")
     def validate_weights_sum(self) -> DecisionConfig:

@@ -15,6 +15,8 @@ from collections import deque
 from src.core.config import TemporalConfig
 from src.core.datatypes import (
     BoardObservation,
+    DecisionResult,
+    DecisionStatus,
     FSMState,
 )
 
@@ -34,11 +36,21 @@ class GameFSM:
         min_geometry_confidence: float = 0.5,
         on_transition: Optional[Callable[[FSMState, FSMState, BoardObservation], None]] = None,
         on_settled_observation: Optional[Callable[[BoardObservation], None]] = None,
+        candidate_generator: Optional[Any] = None,
+        scorer: Optional[Any] = None,
+        decision_gate: Optional[Any] = None,
+        game_state_manager: Optional[Any] = None,
+        on_move_decision: Optional[Callable[[DecisionResult, BoardObservation], None]] = None,
     ) -> None:
         self.config = config or TemporalConfig()
         self.min_geometry_confidence = min_geometry_confidence
         self.on_transition = on_transition
         self.on_settled_observation = on_settled_observation
+        self.candidate_generator = candidate_generator
+        self.scorer = scorer
+        self.decision_gate = decision_gate
+        self.game_state_manager = game_state_manager
+        self.on_move_decision = on_move_decision
 
         self._state: FSMState = FSMState.IDLE
         self._settle_start_time: Optional[float] = None
@@ -47,11 +59,17 @@ class GameFSM:
         )
         self._lost_frame_count: int = 0
         self._max_lost_frames: int = 3  # Tolerate up to 3 momentary frame drops
+        self._last_decision: Optional[DecisionResult] = None
 
     @property
     def current_state(self) -> FSMState:
         """Returns the current FSM operational state."""
         return self._state
+
+    @property
+    def last_decision(self) -> Optional[DecisionResult]:
+        """Returns the most recent decision result evaluated during verification."""
+        return self._last_decision
 
     @property
     def settle_elapsed_time(self) -> float:
@@ -71,6 +89,7 @@ class GameFSM:
         self._settle_start_time = None
         self._verify_buffer.clear()
         self._lost_frame_count = 0
+        self._last_decision = None
 
     def pause(self) -> None:
         """Pauses processing if in active recording state."""
@@ -78,8 +97,8 @@ class GameFSM:
             self._set_state(FSMState.PAUSED, observation=None)
 
     def resume(self) -> None:
-        """Resumes processing from paused state."""
-        if self._state == FSMState.PAUSED:
+        """Resumes processing from paused or uncertain state."""
+        if self._state in (FSMState.PAUSED, FSMState.UNCERTAIN):
             self._set_state(FSMState.STABLE, observation=None)
 
     def stop(self) -> None:
@@ -214,8 +233,43 @@ class GameFSM:
             else:
                 self._verify_buffer.append(observation)
                 if len(self._verify_buffer) >= self.config.verifying_stable_frames:
-                    # Verified consecutive stable sequence
-                    self._set_state(FSMState.STABLE, observation)
+                    # Verified consecutive stable sequence: evaluate move reasoning if configured
+                    if (
+                        self.decision_gate is not None
+                        and self.game_state_manager is not None
+                        and self.candidate_generator is not None
+                        and self.scorer is not None
+                    ):
+                        board = self.game_state_manager.current_board
+                        changed_sqs = self.candidate_generator.detect_changed_squares(board, observation)
+
+                        if not changed_sqs:
+                            logger.info("Verification finished: no visual board changes detected; returning to STABLE")
+                            self._set_state(FSMState.STABLE, observation)
+                        else:
+                            candidates = self.candidate_generator.generate_candidates(board, observation)
+                            ranked = self.scorer.rank_candidates(board, candidates, observation)
+                            decision = self.decision_gate.evaluate(ranked, observation)
+                            self._last_decision = decision
+
+                            if self.on_move_decision:
+                                try:
+                                    self.on_move_decision(decision, observation)
+                                except Exception as exc:
+                                    logger.error("Error in on_move_decision callback: %s", exc, exc_info=True)
+
+                            if decision.status == DecisionStatus.ACCEPTED and decision.accepted_hypothesis:
+                                self.game_state_manager.commit(decision.accepted_hypothesis, observation)
+                                self._set_state(FSMState.STABLE, observation)
+                            elif decision.status == DecisionStatus.UNCERTAIN:
+                                self._set_state(FSMState.UNCERTAIN, observation)
+                            elif decision.status == DecisionStatus.NO_CANDIDATE:
+                                self._set_state(FSMState.STABLE, observation)
+                            else:  # REJECTED
+                                self._set_state(FSMState.UNCERTAIN, observation)
+                    else:
+                        self._set_state(FSMState.STABLE, observation)
+
                     if self.on_settled_observation:
                         self.on_settled_observation(observation)
                     self._verify_buffer.clear()
@@ -225,8 +279,27 @@ class GameFSM:
             if not active_disturbance and geom_valid:
                 self._verify_buffer.append(observation)
                 if len(self._verify_buffer) >= self.config.verifying_stable_frames:
-                    self._set_state(FSMState.STABLE, observation)
-                    self._verify_buffer.clear()
+                    # Attempt re-evaluation
+                    if (
+                        self.decision_gate is not None
+                        and self.game_state_manager is not None
+                        and self.candidate_generator is not None
+                        and self.scorer is not None
+                    ):
+                        board = self.game_state_manager.current_board
+                        candidates = self.candidate_generator.generate_candidates(board, observation)
+                        ranked = self.scorer.rank_candidates(board, candidates, observation)
+                        decision = self.decision_gate.evaluate(ranked, observation)
+                        self._last_decision = decision
+                        if decision.status == DecisionStatus.ACCEPTED and decision.accepted_hypothesis:
+                            self.game_state_manager.commit(decision.accepted_hypothesis, observation)
+                            self._set_state(FSMState.STABLE, observation)
+                            self._verify_buffer.clear()
+                    else:
+                        self._set_state(FSMState.STABLE, observation)
+                        self._verify_buffer.clear()
+            else:
+                self._verify_buffer.clear()
 
         observation.fsm_state = self._state
         return self._state
