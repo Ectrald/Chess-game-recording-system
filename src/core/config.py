@@ -389,6 +389,52 @@ class CameraConfig(BaseModel):
         return v
 
 
+class UIConfig(BaseModel):
+    """Configuration for operator visual dashboard and GUI display."""
+    headless: bool = Field(
+        default=False,
+        description="Whether to run in headless mode without X11/GUI display",
+    )
+    window_title: str = Field(
+        default="Chess Recording System HUD",
+        description="Title of the HighGUI display window",
+    )
+    display_width: int = Field(
+        default=1280,
+        gt=320,
+        le=3840,
+        description="Display window width in pixels",
+    )
+    display_height: int = Field(
+        default=720,
+        gt=240,
+        le=2160,
+        description="Display window height in pixels",
+    )
+    show_virtual_board: bool = Field(
+        default=True,
+        description="Whether to render virtual 2D board overlay",
+    )
+    show_move_list: bool = Field(
+        default=True,
+        description="Whether to display recent committed moves list",
+    )
+    show_eval_bar: bool = Field(
+        default=True,
+        description="Whether to display Stockfish evaluation indicator",
+    )
+    show_hand_landmarks: bool = Field(
+        default=True,
+        description="Whether to draw hand landmarks and occlusion masks",
+    )
+    font_scale: float = Field(
+        default=0.6,
+        ge=0.2,
+        le=2.0,
+        description="Font scale factor for HUD overlay text",
+    )
+
+
 class AppConfig(BaseModel):
     """Top-level unified system configuration."""
     vision: VisionConfig = Field(default_factory=VisionConfig)
@@ -397,6 +443,7 @@ class AppConfig(BaseModel):
     analysis: AnalysisConfig = Field(default_factory=AnalysisConfig)
     persistence: PersistenceConfig = Field(default_factory=PersistenceConfig)
     camera: CameraConfig = Field(default_factory=CameraConfig)
+    ui: UIConfig = Field(default_factory=UIConfig)
     labeller: LabellerConfig = Field(default_factory=LabellerConfig)
     piece_classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
     training: TrainingConfig = Field(default_factory=TrainingConfig)
