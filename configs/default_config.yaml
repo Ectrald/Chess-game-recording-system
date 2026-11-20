@@ -113,4 +113,15 @@ training:
   seed: 42
   experiment_name: "chess_piece_classification"
 
+ui:
+  headless: false
+  window_title: "Chess Recording System HUD"
+  display_width: 1280
+  display_height: 720
+  show_virtual_board: true
+  show_move_list: true
+  show_eval_bar: true
+  show_hand_landmarks: true
+  font_scale: 0.6
+
 

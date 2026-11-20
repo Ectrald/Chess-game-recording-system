@@ -733,3 +733,26 @@ class SessionManifest(BaseModel):
     journal_checksum: str = Field(default="", description="Cumulative SHA-256 checksum of the journal")
     is_completed: bool = Field(default=False, description="True if game is officially finished")
 
+
+class PipelineState(BaseModel):
+    """Snapshot of overall system state at a specific frame step."""
+    frame_id: int = Field(default=0, ge=0, description="Index of the current video frame")
+    timestamp: float = Field(default=0.0, ge=0.0, description="Video stream timestamp in seconds")
+    fsm_state: FSMState = Field(default=FSMState.IDLE, description="Current FSM state")
+    board_detected: bool = Field(default=False, description="Whether board polygon is localized")
+    geometry_confidence: float = Field(default=0.0, ge=0.0, le=1.0, description="Geometry confidence score S_g")
+    hand_detected: bool = Field(default=False, description="Whether hand is in the board area")
+    motion_level: float = Field(default=0.0, ge=0.0, description="Optical differential motion measure")
+    current_ply: int = Field(default=0, ge=0, description="Half-move count of the game")
+    current_fen: str = Field(
+        default="rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        description="Current authoritative FEN",
+    )
+    last_move_san: Optional[str] = Field(default=None, description="SAN notation of last committed move")
+    last_move_uci: Optional[str] = Field(default=None, description="UCI string of last committed move")
+    last_decision: Optional[DecisionResult] = Field(default=None, description="Recent decision gate outcome")
+    latest_eval: Optional[AnalysisResult] = Field(default=None, description="Most recent Stockfish analysis")
+    is_paused: bool = Field(default=False, description="Whether system is paused by operator")
+    active_uncertainty: bool = Field(default=False, description="Whether operator intervention is requested")
+    processing_fps: float = Field(default=0.0, ge=0.0, description="Measured processing frame rate")
+
