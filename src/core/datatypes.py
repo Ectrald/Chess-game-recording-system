@@ -12,6 +12,7 @@ from enum import Enum
 import math
 import re
 from typing import Any, Dict, List, Literal, NamedTuple, Optional, Set, Tuple
+import uuid
 import numpy as np
 from pydantic import (
     BaseModel,
@@ -355,6 +356,17 @@ class CellObservation(BaseModel):
         default=False,
         description="True if square is overlapped by MediaPipe hand mask",
     )
+    occlusion_ratio: float = Field(
+        default=0.0,
+        ge=0.0,
+        le=1.0,
+        description="Fraction of square area occluded by hand mask",
+    )
+    motion_level: float = Field(
+        default=0.0,
+        ge=0.0,
+        description="Local cell motion level measure",
+    )
 
     @field_validator("probabilities")
     @classmethod
@@ -567,6 +579,14 @@ class BoardObservation(BaseModel):
         )
 
 
+class DecisionStatus(str, Enum):
+    """Status outcome returned by the decision gate for candidate move evaluation."""
+    ACCEPTED = "accepted"          # Move uniquely confirmed and accepted
+    UNCERTAIN = "uncertain"        # Ambiguity: low confidence margin or low absolute score
+    REJECTED = "rejected"          # Move fails basic validity or high occlusion
+    NO_CANDIDATE = "no_candidate"  # No legal move candidate matched visual changes
+
+
 class MoveHypothesis(BaseModel):
     """Candidate move evaluated against visual and temporal evidence.
     
@@ -577,10 +597,21 @@ class MoveHypothesis(BaseModel):
     move_san: Optional[str] = Field(default=None, description="Standard Algebraic Notation, e.g. 'e4'")
     changed_squares: List[str] = Field(description="Squares affected by candidate move (delta S)")
     score_visual: float = Field(description="Log-likelihood visual consistency S_v(m)")
-    score_temporal: float = Field(ge=0.0, le=1.0, description="Temporal consistency S_t(m)")
-    score_geometry: float = Field(ge=0.0, le=1.0, description="Geometry quality score S_g(m)")
-    penalty_occlusion: float = Field(ge=0.0, description="Occlusion penalty P_o(m)")
+    score_temporal: float = Field(default=1.0, ge=0.0, le=1.0, description="Temporal consistency S_t(m)")
+    score_geometry: float = Field(default=1.0, ge=0.0, le=1.0, description="Geometry quality score S_g(m)")
+    penalty_occlusion: float = Field(default=0.0, ge=0.0, description="Occlusion penalty P_o(m)")
     total_score: float = Field(description="Aggregated score S(m)")
+    is_legal: bool = Field(default=True, description="Whether move is legal in current board state")
+
+
+class DecisionResult(BaseModel):
+    """Result of hypothesis evaluation through the decision gate."""
+    status: DecisionStatus = Field(description="Decision outcome status")
+    accepted_hypothesis: Optional[MoveHypothesis] = Field(default=None, description="Accepted candidate move if status is ACCEPTED")
+    margin: float = Field(default=0.0, ge=0.0, description="Confidence margin: S(m1) - S(m2)")
+    rejection_reason: Optional[str] = Field(default=None, description="Explanation if hypothesis was rejected or uncertain")
+    top_hypotheses: List[MoveHypothesis] = Field(default_factory=list, description="Top ranked candidate hypotheses")
+    uncertain_squares: List[str] = Field(default_factory=list, description="List of ambiguous squares when status is UNCERTAIN")
 
 
 class MoveEvent(BaseModel):
@@ -588,6 +619,7 @@ class MoveEvent(BaseModel):
     
     Mapped to Table 2.2 'MoveEvent': ply, FEN before/after, SAN/UCI, confidence, evidence frames.
     """
+    event_id: str = Field(default_factory=lambda: uuid.uuid4().hex, description="Unique UUID event identifier")
     ply: int = Field(ge=1, description="Half-move index (1 = White move 1, 2 = Black move 1, ...)")
     fen_before: str = Field(description="FEN position string prior to move")
     move_uci: str = Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$", description="UCI move (e.g. 'e7e8q')")
@@ -596,6 +628,7 @@ class MoveEvent(BaseModel):
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence margin Delta: S(m1) - S(m2)")
     timestamp: float = Field(ge=0.0, description="Session timestamp of move confirmation")
     evidence_frame_id: int = Field(ge=0, description="Reference frame_id documenting move completion")
+    idempotency_key: Optional[str] = Field(default=None, description="Idempotency key to deduplicate move event")
     eval_centipawns: Optional[int] = Field(default=None, description="Stockfish evaluation in centipawns")
     is_blunder: Optional[bool] = Field(default=None, description="True if move significantly reduced eval")
 

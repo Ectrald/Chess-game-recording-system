@@ -53,6 +53,8 @@ decision:
   weight_geometry: 0.15           # w_g: Homography quality weight
   weight_occlusion: 0.10          # w_o: Occlusion penalty weight
   min_confidence_margin: 0.15     # Delta: Minimum score margin S(m1) - S(m2)
+  min_acceptance_score: 0.55      # tau_accept: Minimum absolute score for gate
+  max_occlusion_threshold: 0.50   # tau_occ_crit: Maximum occlusion ratio on move squares
 
 analysis:
   stockfish_enabled: true
