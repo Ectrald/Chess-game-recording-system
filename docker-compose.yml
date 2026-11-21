@@ -1,0 +1,57 @@
+services:
+  # ============================================================================
+  # Web UI Service (FastAPI + WebSocket + MJPEG Browser Dashboard)
+  # Access via browser at http://localhost:8000 (No local X11 required)
+  # ============================================================================
+  chess-recorder-web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chess-recorder:latest
+    container_name: chess-recorder-web
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/sessions:/app/data/sessions
+      - ./data/benchmark_videos:/app/data/benchmark_videos:ro
+      - ./configs:/app/configs:ro
+    devices:
+      - /dev/video0:/dev/video0
+    command: ["web", "--source", "0", "--host", "0.0.0.0", "--port", "8000"]
+
+  # ============================================================================
+  # Headless CLI Service (Low-resource PCs, servers, CI benchmarks, 0 web overhead)
+  # ============================================================================
+  chess-recorder:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chess-recorder:latest
+    container_name: chess-recorder-headless
+    volumes:
+      - ./data/sessions:/app/data/sessions
+      - ./data/benchmark_videos:/app/data/benchmark_videos:ro
+      - ./configs:/app/configs:ro
+    command: ["benchmark", "--pgn-ref", "data/ground_truth/test_short_game.pgn"]
+
+  # ============================================================================
+  # Interactive GUI Service (X11 Display Forwarding & USB Camera Passthrough)
+  # Run on Linux host: xhost +local:root && docker compose run --rm chess-recorder-gui
+  # ============================================================================
+  chess-recorder-gui:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: chess-recorder:latest
+    container_name: chess-recorder-gui
+    environment:
+      - DISPLAY=${DISPLAY:-:0}
+      - QT_X11_NO_MITSHM=1
+    volumes:
+      - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - ./data/sessions:/app/data/sessions
+      - ./data/benchmark_videos:/app/data/benchmark_videos:ro
+      - ./configs:/app/configs:ro
+    devices:
+      - /dev/video0:/dev/video0
+    command: ["record", "--source", "0", "--display"]

@@ -225,6 +225,87 @@ class VisualHUDComposer:
 
         return canvas
 
+    def compose_video_overlay(
+        self,
+        frame_bgr: np.ndarray,
+        state: PipelineState,
+        corners: Optional[np.ndarray] = None,
+        hand_mask: Optional[np.ndarray] = None,
+    ) -> np.ndarray:
+        """Renders video feed with board boundary, hand overlay and status HUD directly on frame."""
+        vis = frame_bgr.copy()
+        h, w = vis.shape[:2]
+
+        # Draw board boundary polygon & corners
+        if corners is not None and len(corners) == 4 and state.board_detected:
+            poly = np.array(corners, dtype=np.int32).reshape((-1, 1, 2))
+            cv2.polylines(vis, [poly], isClosed=True, color=(0, 255, 255), thickness=2, lineType=cv2.LINE_AA)
+            for cx, cy in corners:
+                cv2.circle(vis, (int(cx), int(cy)), 5, (0, 200, 0), -1)
+
+        # Hand occlusion overlay
+        if hand_mask is not None and self.show_hand_landmarks and state.hand_detected:
+            hm_h, hm_w = hand_mask.shape[:2]
+            if hm_h == h and hm_w == w:
+                red_tint = np.full_like(vis, (0, 0, 180))
+                mask_bool = hand_mask > 0
+                vis[mask_bool] = cv2.addWeighted(vis[mask_bool], 0.6, red_tint[mask_bool], 0.4, 0)
+
+        # FSM State Badge (Top-left)
+        state_color = FSM_COLOR_MAP.get(state.fsm_state, (100, 100, 100))
+        badge_w, badge_h = 240, 48
+        bx, by = 16, 16
+        cv2.rectangle(vis, (bx, by), (bx + badge_w, by + badge_h), (25, 25, 25), -1)
+        cv2.rectangle(vis, (bx, by), (bx + 8, by + badge_h), state_color, -1)
+        cv2.rectangle(vis, (bx, by), (bx + badge_w, by + badge_h), (60, 60, 60), 1)
+
+        state_text = state.fsm_state.value.upper()
+        cv2.putText(
+            vis,
+            f"FSM: {state_text}",
+            (bx + 16, by + 28),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.65,
+            (240, 240, 240),
+            2,
+            cv2.LINE_AA,
+        )
+
+        # Telemetry metrics (Bottom-left)
+        tele_y = h - 16
+        tele_str = f"FPS: {state.processing_fps:.1f} | Frame: {state.frame_id} | Ply: {state.current_ply}"
+        cv2.putText(
+            vis,
+            tele_str,
+            (16, tele_y),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (200, 200, 200),
+            1,
+            cv2.LINE_AA,
+        )
+
+        # Hand & Motion status
+        hand_text = "HAND DETECTED" if state.hand_detected else "HAND: CLEAR"
+        hand_color = (0, 0, 220) if state.hand_detected else (50, 180, 50)
+        cv2.putText(
+            vis,
+            f"[{hand_text}]  Motion: {state.motion_level:.3f}",
+            (16, tele_y - 24),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.45,
+            hand_color,
+            1,
+            cv2.LINE_AA,
+        )
+
+        # Paused banner if paused
+        if state.is_paused:
+            p_text = "PAUSED"
+            cv2.putText(vis, p_text, (max(16, w // 2 - 80), 40), cv2.FONT_HERSHEY_SIMPLEX, 1.0, (0, 255, 255), 2, cv2.LINE_AA)
+
+        return vis
+
     def _render_video_feed(
         self,
         frame_bgr: np.ndarray,

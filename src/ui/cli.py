@@ -186,6 +186,53 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
     return 0 if fen_matched else 1
 
 
+def cmd_web(args: argparse.Namespace) -> int:
+    """Executes the `web` subcommand starting FastAPI server with Web UI."""
+    import uvicorn
+    from src.ui.web.app import create_web_app
+
+    config: AppConfig = load_config(args.config)
+
+    # Determine camera source type
+    src = str(args.source)
+    if src.endswith(".pgn"):
+        src_type = "synthetic"
+    elif src.isdigit():
+        src_type = "device"
+    elif src.startswith("rtsp://") or src.startswith("http://"):
+        src_type = "rtsp"
+    else:
+        src_type = "file"
+
+    config.camera.source_path = src
+    config.camera.source_type = src_type
+    if args.out_dir:
+        config.persistence.base_dir = args.out_dir
+
+    host = args.host or config.web_ui.host
+    port = args.port or config.web_ui.port
+
+    logger.info("Initializing Web UI recording session: source=%s (type=%s) on http://%s:%d", src, src_type, host, port)
+    video_adapter = create_video_adapter(config.camera)
+    orchestrator = SystemOrchestrator(config=config, session_id=args.session_id)
+    if args.white:
+        orchestrator.white_player = args.white
+    if args.black:
+        orchestrator.black_player = args.black
+
+    app = create_web_app(orchestrator=orchestrator, video_adapter=video_adapter)
+
+    print("\n" + "=" * 60)
+    print("CHESS GAME RECORDING SYSTEM - WEB DASHBOARD")
+    print(f"URL:             http://{host if host != '0.0.0.0' else 'localhost'}:{port}")
+    print(f"Video Source:    {src} ({src_type})")
+    print(f"Session Output:  {orchestrator.session_dir}")
+    print("=" * 60 + "\n")
+
+    uvicorn.run(app, host=host, port=port, log_level="info" if args.verbose else "warning")
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     """Constructs command-line argument parser with all subcommands."""
     parser = argparse.ArgumentParser(
@@ -223,6 +270,17 @@ def build_parser() -> argparse.ArgumentParser:
     p_bench.add_argument("--max-frames", type=int, default=None, help="Max frames to process")
     p_bench.add_argument("--fps", type=float, default=30.0, help="Synthetic stream FPS")
 
+    # Subcommand: web
+    p_web = subparsers.add_parser("web", help="Launch web-based browser operator dashboard")
+    p_web.add_argument("--source", "-s", default="0", help="Camera device index, video file, or PGN")
+    p_web.add_argument("--host", default="0.0.0.0", help="Host address to bind server (default 0.0.0.0)")
+    p_web.add_argument("--port", "-p", type=int, default=8000, help="Port to bind server (default 8000)")
+    p_web.add_argument("--config", "-c", default=None, help="Path to YAML configuration file")
+    p_web.add_argument("--out-dir", "-o", default=None, help="Sessions root directory")
+    p_web.add_argument("--session-id", default=None, help="Custom session identifier string")
+    p_web.add_argument("--white", default="White Player", help="White player name")
+    p_web.add_argument("--black", default="Black Player", help="Black player name")
+
     return parser
 
 
@@ -240,6 +298,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         return cmd_replay(args)
     elif args.subcommand == "benchmark":
         return cmd_benchmark(args)
+    elif args.subcommand == "web":
+        return cmd_web(args)
     else:
         parser.print_help()
         return 1
