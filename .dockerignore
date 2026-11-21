@@ -1,0 +1,34 @@
+# Version control and environments
+.git
+.gitignore
+.venv
+env
+venv
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache
+.coverage
+htmlcov
+*.egg-info
+dist
+build
+
+# IDE and OS
+.vscode
+.idea
+*.swp
+*.swo
+*~
+.DS_Store
+
+# Large datasets and session output
+data/sessions
+data/benchmark_videos/*.mp4
+data/benchmark_videos/*.avi
+data/benchmark_videos/*.mov
+!data/benchmark_videos/.gitkeep
+
+# LaTeX build artifacts and explanatory note
+explanatory note/

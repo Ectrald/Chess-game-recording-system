@@ -435,6 +435,16 @@ class UIConfig(BaseModel):
     )
 
 
+class WebUIConfig(BaseModel):
+    """Configuration for web-based operator dashboard."""
+    enabled: bool = Field(default=False, description="Whether web UI server is enabled")
+    host: str = Field(default="0.0.0.0", description="Host address to bind Web UI")
+    port: int = Field(default=8000, ge=1024, le=65535, description="HTTP/WebSocket port")
+    stream_fps: int = Field(default=25, ge=1, le=60, description="Target streaming frame rate for MJPEG")
+    jpeg_quality: int = Field(default=80, ge=10, le=100, description="JPEG encoding compression quality (0-100)")
+    cors_origins: List[str] = Field(default_factory=lambda: ["*"], description="Allowed CORS origin domains")
+
+
 class AppConfig(BaseModel):
     """Top-level unified system configuration."""
     vision: VisionConfig = Field(default_factory=VisionConfig)
@@ -444,6 +454,7 @@ class AppConfig(BaseModel):
     persistence: PersistenceConfig = Field(default_factory=PersistenceConfig)
     camera: CameraConfig = Field(default_factory=CameraConfig)
     ui: UIConfig = Field(default_factory=UIConfig)
+    web_ui: WebUIConfig = Field(default_factory=WebUIConfig)
     labeller: LabellerConfig = Field(default_factory=LabellerConfig)
     piece_classifier: ClassifierConfig = Field(default_factory=ClassifierConfig)
     training: TrainingConfig = Field(default_factory=TrainingConfig)

@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{{ title }} - Live Web Dashboard</title>
+  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♞</text></svg>">
+</head>
+<body>
+  <!-- Header Bar -->
+  <header class="app-header">
+    <div class="brand-section">
+      <span class="brand-icon">♞</span>
+      <div>
+        <h1 class="brand-title">{{ title }}</h1>
+        <span class="session-badge">{{ session_id }}</span>
+      </div>
+    </div>
+
+    <div class="header-status">
+      <div id="badgeConnection" class="badge badge-disconnected">
+        <span class="badge-dot"></span> CONNECTING...
+      </div>
+      <div id="badgeFsm" class="badge badge-fsm">FSM: IDLE</div>
+      <div id="fpsCounter" class="fps-counter">0.0 FPS</div>
+
+      <div class="btn-group">
+        <button id="btnPause" class="btn" title="Pause / Resume perception pipeline">⏸ Pause</button>
+        <button id="btnRollback" class="btn" title="Undo last committed half-move">↩ Rollback</button>
+        <button id="btnRecalibrate" class="btn" title="Re-detect board corners and perspective">⟳ Recalibrate</button>
+        <button id="btnDownloadPgn" class="btn btn-primary" title="Export FIDE PGN file">⬇ Download PGN</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="main-container">
+    <!-- Left Column: Video Stream & Perception Telemetry -->
+    <section class="card video-card">
+      <div class="card-header">
+        <span>LIVE CAMERA FEED &amp; VISION OVERLAYS</span>
+        <span style="font-size: 0.75rem; color: var(--text-dim);">MJPEG / HTTP</span>
+      </div>
+      <div class="card-body">
+        <div class="video-wrapper">
+          <img id="videoStream" src="/video_feed" class="video-stream" alt="Live Camera Video Stream">
+        </div>
+
+        <div class="video-meta-bar">
+          <div class="meta-item">
+            <div class="meta-label">Total Plies</div>
+            <div id="metaPly" class="meta-value">0 (0)</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Board Geometry</div>
+            <div id="metaBoard" class="meta-value" style="color: var(--color-warning);">SEARCHING...</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">White Player</div>
+            <div class="meta-value" style="font-size: 0.85rem;">{{ white_player }}</div>
+          </div>
+          <div class="meta-item">
+            <div class="meta-label">Black Player</div>
+            <div class="meta-value" style="font-size: 0.85rem;">{{ black_player }}</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Column: Interactive Chessboard, Engine Eval & PGN History -->
+    <section class="card board-card">
+      <div class="card-header">
+        <span>AUTHORITATIVE POSITION &amp; ENGINE EVALUATION</span>
+        <span style="font-size: 0.75rem; color: var(--text-dim);">FIDE Engine 16.1</span>
+      </div>
+      <div class="card-body">
+        <!-- Board + Eval Bar Row -->
+        <div class="board-eval-row">
+          <!-- Stockfish Vertical Eval Gauge -->
+          <div class="eval-column" title="Stockfish Centipawn Evaluation">
+            <div class="eval-meter">
+              <div id="evalFill" class="eval-fill-white" style="height: 50%;"></div>
+            </div>
+            <div id="evalLabel" class="eval-score-label">0.0</div>
+          </div>
+
+          <!-- 2D Chessboard Container -->
+          <div class="board-container">
+            <div id="chessboard" class="chessboard">
+              <!-- Dynamically populated 64 squares -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Recorded Move Notation Card -->
+        <div class="card notation-card">
+          <div class="card-header" style="background: none; padding: 0.4rem 0.5rem;">
+            <span>RECORDED PGN NOTATION</span>
+          </div>
+          <div id="notationScroll" class="notation-scroll">
+            <table class="notation-table">
+              <thead>
+                <tr>
+                  <th class="move-num">#</th>
+                  <th class="move-white">White</th>
+                  <th class="move-black">Black</th>
+                  <th class="move-eval">Quality</th>
+                </tr>
+              </thead>
+              <tbody id="movesTableBody">
+                <!-- Move rows dynamically populated -->
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- UNCERTAIN State Modal Dialog -->
+  <div id="uncertainModal" class="modal-overlay">
+    <div class="modal-content">
+      <h2 class="modal-title">⚠️ Uncertain Move Detected</h2>
+      <div class="modal-body">
+        The vision system has identified multiple candidate moves with comparable confidence.
+        Please arbitrate by selecting the verified move or providing manual UCI notation:
+      </div>
+
+      <div id="candidateList" class="candidate-list">
+        <!-- Candidate buttons generated here -->
+      </div>
+
+      <div class="manual-input-row">
+        <input type="text" id="manualUciInput" class="manual-input" placeholder="e.g. e2e4, g1f3..." maxlength="5">
+        <button id="btnManualCommit" class="btn btn-primary">Commit UCI</button>
+        <button id="btnAutoAcceptTop" class="btn btn-warning">Accept #1</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js"></script>
+</body>
+</html>

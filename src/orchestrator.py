@@ -437,6 +437,13 @@ class SystemOrchestrator:
     # -------------------------------------------------------------------------
     # Operator Interventions & Controls
     # -------------------------------------------------------------------------
+    def recalibrate(self) -> None:
+        """Forces board re-detection and orientation re-calibration."""
+        with self._lock:
+            self._board_geometry = None
+            self._orientation_calibrated = False
+            logger.info("Operator triggered board re-detection and orientation recalibration.")
+
     def resolve_uncertainty(
         self,
         move_uci: Optional[str] = None,
@@ -473,11 +480,15 @@ class SystemOrchestrator:
                 return True
 
             if move_uci:
-                self.state_manager.manual_commit(move_uci, self._last_observation)
-                self.fsm.resume()
-                self._active_uncertainty = False
-                logger.info("Operator resolved uncertainty with manual move %s", move_uci)
-                return True
+                try:
+                    self.state_manager.manual_commit(move_uci, self._last_observation)
+                    self.fsm.resume()
+                    self._active_uncertainty = False
+                    logger.info("Operator resolved uncertainty with manual move %s", move_uci)
+                    return True
+                except Exception as exc:
+                    logger.warning("Failed to commit manual move '%s': %s", move_uci, exc)
+                    return False
 
             return False
 
