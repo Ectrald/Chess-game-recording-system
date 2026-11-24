@@ -43,8 +43,9 @@
         <span style="font-size: 0.75rem; color: var(--text-dim);">MJPEG / HTTP</span>
       </div>
       <div class="card-body">
-        <div class="video-wrapper">
+        <div class="video-wrapper" id="videoWrapper">
           <img id="videoStream" src="/video_feed" class="video-stream" alt="Live Camera Video Stream">
+          <canvas id="cornersCanvas" class="corners-overlay" title="Drag corners to fine-tune board geometry"></canvas>
         </div>
 
         <div class="video-meta-bar">

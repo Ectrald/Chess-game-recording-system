@@ -48,6 +48,7 @@ from src.reasoning.fsm import GameFSM
 from src.reasoning.game_state_manager import GameStateManager
 from src.reasoning.scorer import MoveScorer
 from src.vision.board_localizer import BaseBoardLocalizer, create_board_localizer
+from src.vision.corner_refinement import order_corners_canonical
 from src.vision.hand_detector import BaseHandDetector, create_hand_detector
 from src.vision.homography import GeometryTransformer
 from src.vision.motion_detector import MotionDetector
@@ -376,10 +377,9 @@ class SystemOrchestrator:
                 )
             else:
                 # Board not yet located
-                observation = BoardObservation(
+                observation = BoardObservation.create_default(
                     frame_id=frame.frame_id,
                     timestamp=frame.timestamp,
-                    cells={},
                     motion_detected=False,
                     motion_level=0.0,
                     hand_present=is_hand_present,
@@ -442,7 +442,49 @@ class SystemOrchestrator:
         with self._lock:
             self._board_geometry = None
             self._orientation_calibrated = False
+            from src.vision.board_localizer import create_board_localizer
+            self.board_localizer = create_board_localizer(self.config.vision)
             logger.info("Operator triggered board re-detection and orientation recalibration.")
+
+    def set_manual_corners(self, corners: Sequence[Tuple[float, float]]) -> bool:
+        """Manually sets the 4 board corners and locks geometry.
+
+        Args:
+            corners: Sequence of 4 (x, y) coordinates.
+
+        Returns:
+            True if corners form a valid quadrilateral and geometry was locked.
+        """
+        with self._lock:
+            if len(corners) != 4:
+                return False
+            ordered = order_corners_canonical(corners)
+            is_valid, reason, _ = GeometryTransformer.validate_quadrilateral(
+                ordered,
+                min_area_ratio=0.02,
+            )
+            if not is_valid:
+                logger.warning("Manual corners rejected: %s", reason)
+                return False
+
+            geom = GeometryTransformer.build_board_geometry(
+                corners=ordered,
+                target_size=self.config.vision.target_board_size,
+                min_area_ratio=0.02,
+                detection_method="manual",
+            )
+            if geom is not None and geom.is_valid:
+                self._board_geometry = geom
+                self._orientation_calibrated = False
+                from src.vision.board_localizer import ManualCornerLocalizer
+                self.board_localizer = ManualCornerLocalizer(
+                    corners=ordered,
+                    target_size=self.config.vision.target_board_size,
+                    subpixel_refinement=True,
+                )
+                logger.info("Operator manually locked board corners: %s", ordered)
+                return True
+            return False
 
     def resolve_uncertainty(
         self,

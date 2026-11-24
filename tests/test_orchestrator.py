@@ -142,6 +142,29 @@ class TestSystemOrchestrator:
         assert state.fsm_state == FSMState.STABLE
         assert state.current_ply == 0
 
+    def test_process_frame_unlocated_board(self, tmp_path) -> None:
+        """Verifies process_frame executes smoothly when board is not yet located."""
+        from src.vision.board_localizer import BaseBoardLocalizer
+        from src.core.datatypes import BoardGeometry
+
+        class NoneLocalizer(BaseBoardLocalizer):
+            def locate(self, frame):
+                return None
+
+        config = load_config()
+        config.persistence.base_dir = str(tmp_path / "sessions_unlocated")
+        config.analysis.stockfish_enabled = False
+        orch = SystemOrchestrator(config=config, board_localizer=NoneLocalizer())
+        orch.start_session()
+
+        dummy_img = np.zeros((720, 1280, 3), dtype=np.uint8)
+        frame = Frame(frame_id=1, timestamp=0.033, image=dummy_img)
+        state = orch.process_frame(frame)
+
+        assert state is not None
+        assert state.board_detected is False
+        assert state.fsm_state == FSMState.LOCATING_BOARD
+
     def test_pause_and_resume_controls(self, orchestrator_fixture: SystemOrchestrator) -> None:
         orch = orchestrator_fixture
         dummy_img = np.zeros((720, 1280, 3), dtype=np.uint8)

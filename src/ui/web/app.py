@@ -42,6 +42,17 @@ class ResolvePayload(BaseModel):
     candidate_index: Optional[int] = Field(default=None, description="0-based index of candidate to accept")
 
 
+class SetCornersPayload(BaseModel):
+    """Payload schema for manual board corner calibration."""
+    corners: List[List[float]] = Field(
+        ...,
+        description="4 [x, y] corner coordinates in video frame space: [TL, TR, BR, BL]",
+    )
+
+
+SetCornersPayload.model_rebuild()
+
+
 def get_state_payload(orchestrator: SystemOrchestrator) -> Dict[str, Any]:
     """Serializes authoritative orchestrator and board state into a JSON dictionary."""
     board = orchestrator.state_manager.current_board
@@ -86,6 +97,16 @@ def get_state_payload(orchestrator: SystemOrchestrator) -> Dict[str, Any]:
             for idx, h in enumerate(hypos)
         ]
 
+    board_corners: Optional[List[List[float]]] = None
+    if orchestrator._board_geometry is not None and orchestrator._board_geometry.corners:
+        board_corners = [
+            [
+                round(float(c[0] if isinstance(c, (tuple, list)) else c.x), 1),
+                round(float(c[1] if isinstance(c, (tuple, list)) else c.y), 1),
+            ]
+            for c in orchestrator._board_geometry.corners
+        ]
+
     return {
         "type": "gameState",
         "fen": orchestrator.state_manager.current_fen,
@@ -100,6 +121,7 @@ def get_state_payload(orchestrator: SystemOrchestrator) -> Dict[str, Any]:
         "uncertain_candidates": candidates,
         "fps": round(float(orchestrator._current_fps), 1),
         "board_detected": orchestrator._board_geometry is not None,
+        "board_corners": board_corners,
         "last_move": last_move,
         "move_history": move_history,
         "engine_eval": eval_dict,
@@ -329,6 +351,19 @@ def create_web_app(
     async def action_recalibrate():
         """Triggers board re-detection and orientation calibration."""
         orchestrator.recalibrate()
+        payload = get_state_payload(orchestrator)
+        await ws.broadcast(payload)
+        return {"success": True}
+
+    @app.post("/api/action/set_corners")
+    async def action_set_corners(req: SetCornersPayload):
+        """Sets board corners manually by operator."""
+        if len(req.corners) != 4:
+            raise HTTPException(status_code=400, detail="Exactly 4 corners required")
+        tuples_corners = [(float(p[0]), float(p[1])) for p in req.corners]
+        success = orchestrator.set_manual_corners(tuples_corners)
+        if not success:
+            raise HTTPException(status_code=400, detail="Invalid quadrilateral corners")
         payload = get_state_payload(orchestrator)
         await ws.broadcast(payload)
         return {"success": True}

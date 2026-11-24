@@ -142,9 +142,17 @@ class CoarseToFineLocalizer(BaseBoardLocalizer):
                     verbose=False,
                 )
                 if results and len(results[0].boxes) > 0:
-                    box = results[0].boxes[0]
-                    xyxy = box.xyxy[0].cpu().numpy()
-                    x1, y1, x2, y2 = [int(v) for v in xyxy]
+                    boxes = results[0].boxes
+                    if len(boxes) >= 4:
+                        all_xyxy = boxes.xyxy.cpu().numpy()
+                        x1 = int(np.min(all_xyxy[:, 0]))
+                        y1 = int(np.min(all_xyxy[:, 1]))
+                        x2 = int(np.max(all_xyxy[:, 2]))
+                        y2 = int(np.max(all_xyxy[:, 3]))
+                    else:
+                        box = boxes[0]
+                        xyxy = box.xyxy[0].cpu().numpy()
+                        x1, y1, x2, y2 = [int(v) for v in xyxy]
                     # Add 8% padding margin
                     pad_x = int((x2 - x1) * 0.08)
                     pad_y = int((y2 - y1) * 0.08)
@@ -157,22 +165,82 @@ class CoarseToFineLocalizer(BaseBoardLocalizer):
             except Exception:
                 pass
 
-        # Fallback coarse detector using saliency / large contour
+        # Fallback coarse detector using grid-overlap saliency and Hough lines
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
         blur = cv2.GaussianBlur(gray, (5, 5), 0)
         edges = cv2.Canny(blur, 40, 120)
+
+        # 1. Try grid intersection saliency mask (simultaneous H and V line presence)
+        min_len = max(20, int(min(w, h) * 0.08))
+        lines = cv2.HoughLinesP(edges, 1, np.pi / 180, threshold=35, minLineLength=min_len, maxLineGap=15)
+        if lines is not None and len(lines) >= 6:
+            h_mask = np.zeros((h, w), dtype=np.uint8)
+            v_mask = np.zeros((h, w), dtype=np.uint8)
+            for l in lines:
+                x1, y1, x2, y2 = [float(v) for v in l.flatten()]
+                dx = x2 - x1
+                dy = y2 - y1
+                ang = np.degrees(np.arctan2(dy, dx)) % 180.0
+                if ang > 90.0:
+                    ang -= 180.0
+                if abs(ang) < 28.0:
+                    cv2.line(h_mask, (int(x1), int(y1)), (int(x2), int(y2)), 255, 2)
+                elif abs(ang) > 62.0:
+                    cv2.line(v_mask, (int(x1), int(y1)), (int(x2), int(y2)), 255, 2)
+
+            k_size = max(15, int(min(w, h) * 0.06))
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (k_size, k_size))
+            h_dil = cv2.dilate(h_mask, kernel)
+            v_dil = cv2.dilate(v_mask, kernel)
+            grid_mask = cv2.bitwise_and(h_dil, v_dil)
+
+            close_k = max(21, int(min(w, h) * 0.09))
+            close_kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (close_k, close_k))
+            grid_closed = cv2.morphologyEx(grid_mask, cv2.MORPH_CLOSE, close_kernel)
+
+            contours, _ = cv2.findContours(grid_closed, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            valid_boxes: List[Tuple[float, Tuple[int, int, int, int]]] = []
+            for c in contours:
+                area = cv2.contourArea(c)
+                if area < 0.05 * w * h:
+                    continue
+                bx, by, bw, bh = cv2.boundingRect(c)
+                aspect = bw / float(bh) if bh > 0 else 0.0
+                if 0.5 <= aspect <= 2.0:
+                    valid_boxes.append((area, (bx, by, bw, bh)))
+
+            if valid_boxes:
+                _, (bx, by, bw, bh) = max(valid_boxes, key=lambda it: it[0])
+                pad_x = int(bw * 0.08)
+                pad_y = int(bh * 0.08)
+                return (
+                    max(0, bx - pad_x),
+                    max(0, by - pad_y),
+                    min(w, bx + bw + pad_x),
+                    min(h, by + bh + pad_y),
+                )
+
+        # 2. Secondary fallback: find external contours with chessboard-like aspect ratio
         contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
         if contours:
-            largest = max(contours, key=cv2.contourArea)
-            if cv2.contourArea(largest) > 0.10 * w * h:
-                x, y, bw, bh = cv2.boundingRect(largest)
+            valid_contours: List[Tuple[float, Tuple[int, int, int, int]]] = []
+            for c in contours:
+                area = cv2.contourArea(c)
+                if area > 0.10 * w * h:
+                    bx, by, bw, bh = cv2.boundingRect(c)
+                    aspect = bw / float(bh) if bh > 0 else 0.0
+                    # Board must be reasonably square, not spanning entire frame
+                    if 0.6 <= aspect <= 1.8 and (bw < 0.95 * w or bh < 0.95 * h):
+                        valid_contours.append((area, (bx, by, bw, bh)))
+            if valid_contours:
+                _, (bx, by, bw, bh) = max(valid_contours, key=lambda it: it[0])
                 pad_x = int(bw * 0.06)
                 pad_y = int(bh * 0.06)
                 return (
-                    max(0, x - pad_x),
-                    max(0, y - pad_y),
-                    min(w, x + bw + pad_x),
-                    min(h, y + bh + pad_y),
+                    max(0, bx - pad_x),
+                    max(0, by - pad_y),
+                    min(w, bx + bw + pad_x),
+                    min(h, by + bh + pad_y),
                 )
         return None
 

@@ -26,10 +26,10 @@ data/benchmark_videos/*.mp4
 data/benchmark_videos/*.avi
 data/benchmark_videos/*.mov
 !data/benchmark_videos/.gitkeep
-data/weights/*.pt
-data/weights/*.onnx
-data/weights/*.engine
+data/weights/*
 !data/weights/.gitkeep
+models/*
+!models/.gitkeep
 
 # LaTeX build artifacts
 explanatory note/*.aux

@@ -34,6 +34,12 @@ class ChessWebDashboard {
     this.btnRecalibrate = document.getElementById("btnRecalibrate");
     this.btnDownloadPgn = document.getElementById("btnDownloadPgn");
 
+    this.videoStream = document.getElementById("videoStream");
+    this.cornersCanvas = document.getElementById("cornersCanvas");
+    this.corners = null;
+    this.draggedCornerIdx = -1;
+    this.isDragging = false;
+
     this.boardEl = document.getElementById("chessboard");
     this.evalFillEl = document.getElementById("evalFill");
     this.evalLabelEl = document.getElementById("evalLabel");
@@ -98,10 +104,24 @@ class ChessWebDashboard {
   bindEvents() {
     this.btnPause.addEventListener("click", () => this.postAction("/api/action/pause"));
     this.btnRollback.addEventListener("click", () => this.postAction("/api/action/rollback"));
-    this.btnRecalibrate.addEventListener("click", () => this.postAction("/api/action/recalibrate"));
+    this.btnRecalibrate.addEventListener("click", () => {
+      this.corners = null;
+      if (this.cornersCanvas) {
+        const ctx = this.cornersCanvas.getContext("2d");
+        ctx.clearRect(0, 0, this.cornersCanvas.width, this.cornersCanvas.height);
+      }
+      this.postAction("/api/action/recalibrate");
+    });
     this.btnDownloadPgn.addEventListener("click", () => {
       window.open("/api/pgn?download=true", "_blank");
     });
+
+    if (this.cornersCanvas) {
+      this.cornersCanvas.addEventListener("mousedown", (e) => this.handleCornerMouseDown(e));
+      window.addEventListener("mousemove", (e) => this.handleCornerMouseMove(e));
+      window.addEventListener("mouseup", (e) => this.handleCornerMouseUp(e));
+    }
+    window.addEventListener("resize", () => this.renderCornerHandles());
 
     this.btnAutoAcceptTop.addEventListener("click", () => {
       this.resolveUncertainty({ auto_accept_top: true });
@@ -196,6 +216,17 @@ class ChessWebDashboard {
     this.metaPlyEl.textContent = `${state.ply} (${Math.floor((state.ply + 1) / 2)})`;
     this.metaBoardEl.textContent = state.board_detected ? "LOCKED" : "SEARCHING...";
     this.metaBoardEl.style.color = state.board_detected ? "var(--color-success)" : "var(--color-warning)";
+
+    // Update corner handles
+    if (state.board_corners) {
+      this.onBoardCornersReceived(state.board_corners);
+    } else if (!state.board_detected && !this.isDragging) {
+      this.corners = null;
+      if (this.cornersCanvas) {
+        const ctx = this.cornersCanvas.getContext("2d");
+        ctx.clearRect(0, 0, this.cornersCanvas.width, this.cornersCanvas.height);
+      }
+    }
 
     // Update Chessboard FEN
     this.renderFen(state.fen, state.last_move, state.is_check, state.turn);
@@ -372,6 +403,133 @@ class ChessWebDashboard {
   hideUncertainModal() {
     this.modalOverlay.classList.remove("open");
     this.manualUciInput.value = "";
+  }
+
+  onBoardCornersReceived(board_corners) {
+    if (!this.isDragging && board_corners && board_corners.length === 4) {
+      this.corners = board_corners.map(p => [Number(p[0]), Number(p[1])]);
+      this.renderCornerHandles();
+    }
+  }
+
+  getCanvasScale() {
+    if (!this.videoStream || !this.cornersCanvas) return { scaleX: 1, scaleY: 1, natW: 1, natH: 1, rect: null };
+    const rect = this.videoStream.getBoundingClientRect();
+    if (rect.width === 0 || rect.height === 0) return { scaleX: 1, scaleY: 1, natW: 1, natH: 1, rect };
+    if (this.cornersCanvas.width !== Math.round(rect.width) || this.cornersCanvas.height !== Math.round(rect.height)) {
+      this.cornersCanvas.width = Math.round(rect.width);
+      this.cornersCanvas.height = Math.round(rect.height);
+    }
+    const natW = this.videoStream.naturalWidth || rect.width;
+    const natH = this.videoStream.naturalHeight || rect.height;
+    return {
+      scaleX: rect.width / Math.max(1, natW),
+      scaleY: rect.height / Math.max(1, natH),
+      natW,
+      natH,
+      rect
+    };
+  }
+
+  renderCornerHandles() {
+    if (!this.cornersCanvas || !this.videoStream) return;
+    const { scaleX, scaleY, rect } = this.getCanvasScale();
+    if (!rect) return;
+    const ctx = this.cornersCanvas.getContext("2d");
+    ctx.clearRect(0, 0, this.cornersCanvas.width, this.cornersCanvas.height);
+
+    if (!this.corners || this.corners.length !== 4) return;
+
+    const pts = this.corners.map(c => [c[0] * scaleX, c[1] * scaleY]);
+
+    // 1. Draw boundary quadrilateral
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0], pts[0][1]);
+    ctx.lineTo(pts[1][0], pts[1][1]);
+    ctx.lineTo(pts[2][0], pts[2][1]);
+    ctx.lineTo(pts[3][0], pts[3][1]);
+    ctx.closePath();
+    ctx.strokeStyle = "rgba(234, 179, 8, 0.9)";
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+
+    // 2. Draw 4 draggable corner handles
+    const labels = ["a8", "h8", "h1", "a1"];
+    pts.forEach((p, i) => {
+      const isDrag = (i === this.draggedCornerIdx);
+      ctx.beginPath();
+      ctx.arc(p[0], p[1], isDrag ? 10 : 8, 0, Math.PI * 2);
+      ctx.fillStyle = isDrag ? "#f59e0b" : "#06b6d4";
+      ctx.fill();
+      ctx.strokeStyle = "#ffffff";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+
+      ctx.fillStyle = "#ffffff";
+      ctx.font = "bold 11px Inter, sans-serif";
+      ctx.fillText(labels[i] || (i + 1), p[0] + 10, p[1] - 4);
+    });
+  }
+
+  handleCornerMouseDown(e) {
+    if (!this.corners || this.corners.length !== 4) return;
+    const { scaleX, scaleY, rect } = this.getCanvasScale();
+    if (!rect) return;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    for (let i = 0; i < 4; i++) {
+      const cx = this.corners[i][0] * scaleX;
+      const cy = this.corners[i][1] * scaleY;
+      if (Math.hypot(mouseX - cx, mouseY - cy) <= 18) {
+        this.draggedCornerIdx = i;
+        this.isDragging = true;
+        this.cornersCanvas.style.cursor = "grabbing";
+        e.preventDefault();
+        break;
+      }
+    }
+  }
+
+  handleCornerMouseMove(e) {
+    if (!this.corners || this.corners.length !== 4) return;
+    const { scaleX, scaleY, natW, natH, rect } = this.getCanvasScale();
+    if (!rect) return;
+    const mouseX = e.clientX - rect.left;
+    const mouseY = e.clientY - rect.top;
+
+    if (this.isDragging && this.draggedCornerIdx !== -1) {
+      const clampedNativeX = Math.max(0, Math.min(natW, mouseX / scaleX));
+      const clampedNativeY = Math.max(0, Math.min(natH, mouseY / scaleY));
+      this.corners[this.draggedCornerIdx] = [clampedNativeX, clampedNativeY];
+      this.renderCornerHandles();
+    } else {
+      let isOver = false;
+      for (let i = 0; i < 4; i++) {
+        const cx = this.corners[i][0] * scaleX;
+        const cy = this.corners[i][1] * scaleY;
+        if (Math.hypot(mouseX - cx, mouseY - cy) <= 18) {
+          isOver = true;
+          break;
+        }
+      }
+      this.cornersCanvas.style.cursor = isOver ? "grab" : "default";
+    }
+  }
+
+  handleCornerMouseUp(e) {
+    if (this.isDragging && this.draggedCornerIdx !== -1) {
+      this.isDragging = false;
+      this.draggedCornerIdx = -1;
+      this.cornersCanvas.style.cursor = "default";
+      if (this.corners && this.corners.length === 4) {
+        this.postAction("/api/action/set_corners", { corners: this.corners });
+      }
+      this.renderCornerHandles();
+    }
+  }
   }
 
   async postAction(url, body = {}) {

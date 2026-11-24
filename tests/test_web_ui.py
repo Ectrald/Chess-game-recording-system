@@ -204,3 +204,26 @@ def test_cli_web_parser() -> None:
     assert args.source == "camera.mp4"
     assert args.port == 8080
     assert args.host == "127.0.0.1"
+
+
+def test_action_set_corners_endpoint(client: TestClient, orchestrator: SystemOrchestrator) -> None:
+    """Verifies POST /api/action/set_corners manually locks valid board quadrilateral."""
+    corners = [[100.0, 100.0], [500.0, 100.0], [520.0, 500.0], [80.0, 500.0]]
+    response = client.post("/api/action/set_corners", json={"corners": corners})
+    assert response.status_code == 200
+    assert response.json() == {"success": True}
+
+    assert orchestrator._board_geometry is not None
+    assert orchestrator._board_geometry.is_valid is True
+    assert len(orchestrator._board_geometry.corners) == 4
+
+    # Invalid: fewer than 4 corners
+    bad_resp = client.post("/api/action/set_corners", json={"corners": [[100.0, 100.0], [200.0, 200.0]]})
+    assert bad_resp.status_code == 400
+
+    # Invalid: collinear or non-convex
+    bad_poly = client.post(
+        "/api/action/set_corners",
+        json={"corners": [[0.0, 0.0], [10.0, 0.0], [20.0, 0.0], [30.0, 0.0]]},
+    )
+    assert bad_poly.status_code == 400

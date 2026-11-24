@@ -85,11 +85,17 @@ def probabilities_to_cell_observation(
     Returns:
         Populated CellObservation instance.
     """
-    probs_dict = {cls_name: float(probs_13[i]) for i, cls_name in enumerate(PIECE_CLASSES)}
+    probs_arr = np.asarray(probs_13, dtype=np.float32)
+    # Apply stable softmax if raw logits were passed
+    if np.any(probs_arr < 0.0) or np.any(probs_arr > 1.0) or not np.isclose(float(np.sum(probs_arr)), 1.0, atol=0.05):
+        exp_vals = np.exp(probs_arr - np.max(probs_arr))
+        probs_arr = exp_vals / np.sum(exp_vals)
 
-    best_idx = int(np.argmax(probs_13))
+    probs_dict = {cls_name: float(probs_arr[i]) for i, cls_name in enumerate(PIECE_CLASSES)}
+
+    best_idx = int(np.argmax(probs_arr))
     best_cls = PIECE_CLASSES[best_idx]
-    confidence = float(probs_13[best_idx])
+    confidence = float(probs_arr[best_idx])
 
     # Occupancy decision based on configured threshold
     empty_prob = probs_dict["empty"]

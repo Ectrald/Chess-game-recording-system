@@ -57,3 +57,15 @@ def test_stockfish_worker_fallback_creation():
     worker.restart()
     worker.close()
 
+
+def test_stockfish_worker_discover_executable_with_real_file(tmp_path):
+    """Verifies _discover_executable runs os.access check when pointing to a real file."""
+    dummy_exe = tmp_path / "dummy_stockfish"
+    dummy_exe.write_text("#!/bin/sh\nexit 0\n")
+    dummy_exe.chmod(0o755)
+
+    config = AnalysisConfig(stockfish_enabled=True, stockfish_path=str(dummy_exe))
+    worker = StockfishUCIWorker(config)
+    assert worker._discover_executable() == str(dummy_exe)
+
+

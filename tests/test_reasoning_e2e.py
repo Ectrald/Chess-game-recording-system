@@ -8,8 +8,10 @@ across:
 3. Ambiguity handling (UNCERTAIN status, confidence margin deficit, manual operator commit)
 4. Disturbance false alarms (piece touched and returned, zero changes -> STABLE without commit)
 """
+from __future__ import annotations
 
 import io
+from typing import Any, Dict, List, Optional, Tuple
 import pytest
 import chess
 import chess.pgn
