@@ -13,13 +13,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Install system dependencies:
 # - stockfish: UCI chess engine for move analysis
-# - libgl1, libegl1, libglib2.0-0, libgomp1: OpenCV GUI / MediaPipe / image processing dependencies
+# - libgl1, libglib2.0-0, libgomp1: OpenCV GUI / image processing dependencies
 # - ffmpeg: video codec support
 RUN apt-get update && apt-get install -y --no-install-recommends \
     stockfish \
     ffmpeg \
     libgl1 \
-    libegl1 \
     libglib2.0-0 \
     libgomp1 \
     libsm6 \
@@ -33,6 +32,12 @@ WORKDIR /app
 COPY requirements.txt /app/
 RUN pip install --no-cache-dir --upgrade pip && \
     pip install --no-cache-dir -r requirements.txt
+
+# Install MediaPipe runtime OpenGL ES / EGL shared libraries (placed after pip to preserve build cache)
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libegl1 \
+    libgles2 \
+    && rm -rf /var/lib/apt/lists/*
 
 # Copy project source tree, configurations, and ground-truth data
 COPY configs/ /app/configs/

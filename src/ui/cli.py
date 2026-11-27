@@ -245,7 +245,7 @@ def cmd_web(args: argparse.Namespace) -> int:
     if args.black:
         orchestrator.black_player = args.black
 
-    app = create_web_app(orchestrator=orchestrator, video_adapter=video_adapter)
+    app = create_web_app(orchestrator=orchestrator, video_adapter=video_adapter, start_paused=True)
 
     print("\n" + "=" * 60)
     print("CHESS GAME RECORDING SYSTEM - WEB DASHBOARD")

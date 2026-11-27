@@ -188,3 +188,54 @@ class TestGroundTruthBenchmarkFrames:
         rmse = math.sqrt(sum(d ** 2 for d in diffs) / 4.0)
         assert rmse <= 2.0
 
+
+class TestBoardGeometryTracker:
+    def test_tracker_ignores_single_outlier_and_updates_on_sustained_shift(self):
+        from src.vision.board_localizer import BoardGeometryTracker
+        from src.vision.homography import GeometryTransformer
+
+        base_corners = [(400.0, 200.0), (1000.0, 200.0), (1100.0, 800.0), (300.0, 800.0)]
+        shifted_corners = [(415.0, 210.0), (1015.0, 210.0), (1115.0, 810.0), (315.0, 810.0)]
+        outlier_corners = [(800.0, 400.0), (1400.0, 400.0), (1450.0, 950.0), (750.0, 950.0)]
+
+        geom = GeometryTransformer.build_board_geometry(
+            base_corners, target_size=640, image_shape=(1080, 1920), min_area_ratio=0.05
+        )
+        dummy = np.zeros((1080, 1920, 3), dtype=np.uint8)
+        frame = Frame(frame_id=1, timestamp=0.1, image=dummy)
+
+        seq = [outlier_corners, shifted_corners, shifted_corners, shifted_corners]
+
+        class _StubRefiner:
+            def find_board_corners(self, image, roi_bbox=None):
+                return seq.pop(0) if seq else shifted_corners
+
+        tracker = BoardGeometryTracker(refiner=_StubRefiner(), window_size=5, min_samples=3)
+        # 1) Outlier (>95px) must be ignored
+        g1, st1 = tracker.check_drift(frame, geom)
+        assert st1 == "unchanged" and g1 is None
+        # 2) First two shifted frames (< min_samples) wait for median stability
+        g2, st2 = tracker.check_drift(frame, geom)
+        assert st2 == "unchanged"
+        g3, st3 = tracker.check_drift(frame, geom)
+        assert st3 == "unchanged"
+        # 3) 3rd valid sample crosses min_samples and updates cleanly
+        g4, st4 = tracker.check_drift(frame, geom)
+        assert st4 == "updated" and g4 is not None
+        assert math.hypot(g4.corners[0][0] - 415.0, g4.corners[0][1] - 210.0) < 1.0
+
+    def test_create_board_localizer_accepts_localizer_config(self):
+        from src.core.config import VisionConfig, LocalizerConfig
+        from src.vision.board_localizer import create_board_localizer, CoarseToFineLocalizer
+
+        vis_cfg = VisionConfig(
+            localizer=LocalizerConfig(mode="coarse_to_fine", yolo_model_path="custom/yolo.pt", yolo_confidence=0.65)
+        )
+        loc1 = create_board_localizer(vis_cfg)
+        loc2 = create_board_localizer(vis_cfg.localizer)
+        assert isinstance(loc1, CoarseToFineLocalizer)
+        assert isinstance(loc2, CoarseToFineLocalizer)
+        assert str(loc1.yolo_model_path) == "custom/yolo.pt"
+        assert str(loc2.yolo_model_path) == "custom/yolo.pt"
+        assert loc2.yolo_confidence == 0.65
+

@@ -134,3 +134,29 @@ def test_rank_candidates_empty_input():
     obs = create_observation_for_board(board)
     ranked = scorer.rank_candidates(board, [], obs)
     assert ranked == []
+
+
+def test_scorer_factorized_zeroshot_and_figurine_margin():
+    """Zero-shot uniform subtype distribution or replacement figurine must not produce false UNCERTAIN (~0.7 vs 0.6)."""
+    generator = LegalMoveCandidateGenerator()
+    scorer = MoveScorer()
+    board = chess.Board()
+    obs = create_observation_for_board(board)
+
+    # e2 becomes empty; e4 receives a translucent/unknown-subtype white piece (diffuse across 6 w* classes)
+    obs.cells["e2"].probabilities = {c: (0.92 if c == "empty" else 0.005) for c in PIECE_CLASSES}
+    obs.cells["e2"].predicted_piece = "empty"
+    obs.cells["e2"].is_occupied = False
+
+    diffuse_probs = {c: 0.005 for c in PIECE_CLASSES}
+    diffuse_probs["empty"] = 0.04
+    for w_cls in ("wP", "wN", "wB", "wR", "wQ", "wK"):
+        diffuse_probs[w_cls] = 0.15
+    obs.cells["e4"].probabilities = diffuse_probs
+    obs.cells["e4"].predicted_piece = "wN"
+    obs.cells["e4"].is_occupied = True
+
+    ranked = scorer.rank_candidates(board, generator.generate_candidates(board, obs), obs)
+    assert ranked[0].move_uci == "e2e4"
+    assert ranked[0].total_score >= 0.80
+    assert (ranked[0].total_score - ranked[1].total_score) >= 0.15

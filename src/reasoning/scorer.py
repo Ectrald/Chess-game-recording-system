@@ -10,6 +10,7 @@ Reference:
 from __future__ import annotations
 
 import logging
+import math
 from typing import Dict, List, Optional, Tuple
 import chess
 
@@ -78,10 +79,32 @@ class MoveScorer:
                 # Occluded cell is neutral (0.5) to avoid penalizing hidden squares
                 affected_probs.append(0.5)
             else:
-                prob = cell_obs.probabilities.get(expected_class, 0.0)
-                affected_probs.append(max(0.0, min(1.0, prob)))
+                prob = max(0.0, min(1.0, cell_obs.probabilities.get(expected_class, 0.0)))
+                if expected_class != "empty" and move.promotion is None:
+                    # ADR-020: Factorize (occupancy + color) from uncertain fine subtype in zero-shot / replacement figurines
+                    prefix = expected_class[0]
+                    within_color = [
+                        max(0.0, float(p))
+                        for cls, p in cell_obs.probabilities.items()
+                        if cls.startswith(prefix)
+                    ]
+                    color_prob = sum(within_color)
+                    max_within = max(within_color) if within_color else 0.0
+                    if color_prob >= 0.50 and max_within <= 0.48 * max(color_prob, 1e-6):
+                        prob = max(prob, min(1.0, 0.90 * color_prob))
+                    elif color_prob >= 0.60:
+                        prob = max(prob, min(1.0, 0.88 * color_prob))
+                affected_probs.append(prob)
 
-        s_affected = sum(affected_probs) / len(affected_probs) if affected_probs else 0.5
+        if affected_probs:
+            arith_mean = sum(affected_probs) / len(affected_probs)
+            geom_prod = 1.0
+            for p in affected_probs:
+                geom_prod *= max(1e-3, p)
+            geom_mean = geom_prod ** (1.0 / len(affected_probs))
+            s_affected = 0.20 * arith_mean + 0.80 * geom_mean
+        else:
+            s_affected = 0.5
 
         # 2. Global consistency across non-affected squares S_global
         global_probs: List[float] = []

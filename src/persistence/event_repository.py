@@ -90,6 +90,17 @@ class JSONLEventRepository:
         with self._lock:
             return self._event_count
 
+    def clear(self) -> None:
+        """Clears the journal file and resets hash-chain state cleanly."""
+        with self._lock:
+            with self.file_path.open("w", encoding="utf-8") as f:
+                if self.sync_to_disk:
+                    f.flush()
+                    os.fsync(f.fileno())
+            self._last_event_hash = None
+            self._event_count = 0
+            logger.info("Cleared JSONL event repository at %s", self.file_path)
+
     def append_event(self, event: MoveEvent) -> MoveEvent:
         """Atomically appends a MoveEvent to the JSONL journal with SHA-256 chaining.
 
@@ -141,6 +152,21 @@ class JSONLEventRepository:
                         events.append(MoveEvent.model_validate_json(stripped))
             return events
 
+    def read_active_moves(self) -> List[MoveEvent]:
+        """Folds committed moves and compensating rollback events into current active move list."""
+        active: List[MoveEvent] = []
+        for ev in self.read_all_events():
+            ev_type = getattr(ev, "event_type", "move")
+            if ev_type == "move":
+                active.append(ev)
+            elif ev_type == "rollback" and active:
+                active.pop()
+        return active
+
+    def count_illegal_attempts(self) -> int:
+        """Returns total number of logged illegal/unrecognized board change attempts in this session."""
+        return sum(1 for ev in self.read_all_events() if getattr(ev, "event_type", "move") == "illegal_attempt")
+
     def verify_integrity(self) -> Tuple[bool, Optional[str]]:
         """Verifies cryptographic hash chain and sequence integrity of the journal.
 
@@ -166,7 +192,8 @@ class JSONLEventRepository:
                     except Exception as e:
                         return False, f"Line {line_idx}: invalid JSON or contract structure: {e}"
 
-                    if ev.ply != expected_ply:
+                    ev_type = getattr(ev, "event_type", "move")
+                    if ev_type == "move" and ev.ply != expected_ply:
                         return False, f"Line {line_idx}: broken ply sequence. Expected {expected_ply}, got {ev.ply}"
 
                     if ev.prev_event_hash != expected_prev_hash:
@@ -185,7 +212,10 @@ class JSONLEventRepository:
                         )
 
                     expected_prev_hash = ev.event_hash
-                    expected_ply += 1
+                    if ev_type == "move":
+                        expected_ply += 1
+                    elif ev_type == "rollback":
+                        expected_ply = max(1, expected_ply - 1)
 
             return True, None
 

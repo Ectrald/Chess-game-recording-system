@@ -212,3 +212,164 @@ def test_fsm_operator_controls():
 
     fsm.reset()
     assert fsm.current_state == FSMState.IDLE
+
+
+def test_fsm_resume_without_board_enters_locating_board():
+    """Resuming from PAUSED without locked board geometry must enter LOCATING_BOARD, not STABLE."""
+    fsm = GameFSM()
+    fsm.force_state(FSMState.LOCATING_BOARD)
+    fsm.pause()
+    assert fsm.current_state == FSMState.PAUSED
+
+    fsm.resume(has_geometry=False, orientation_ready=False)
+    assert fsm.current_state == FSMState.LOCATING_BOARD
+
+    fsm.pause()
+    fsm.resume(has_geometry=True, orientation_ready=False)
+    assert fsm.current_state == FSMState.CALIBRATING
+
+
+def test_calibrating_blocks_stable_until_orientation_calibrated(fsm_config: TemporalConfig):
+    """Explicit BoardGeometry with orientation_calibrated=False must hold FSM in CALIBRATING."""
+    fsm = GameFSM(config=fsm_config)
+    uncalibrated_geom = BoardGeometry(
+        corners=[(0.0, 0.0), (640.0, 0.0), (640.0, 640.0), (0.0, 640.0)],
+        is_valid=True,
+        orientation_calibrated=False,
+    )
+    obs = BoardObservation.create_default(
+        frame_id=1,
+        timestamp=0.1,
+        geometry_confidence=1.0,
+        geometry=uncalibrated_geom,
+    )
+    assert fsm.update(obs) == FSMState.CALIBRATING
+    # Must stay in CALIBRATING even on subsequent high-confidence frames until calibrated
+    assert fsm.update(obs) == FSMState.CALIBRATING
+
+    calibrated_geom = uncalibrated_geom.model_copy(update={"orientation_calibrated": True})
+    obs_ok = obs.model_copy(update={"frame_id": 3, "timestamp": 0.3, "geometry": calibrated_geom})
+    assert fsm.update(obs_ok) == FSMState.STABLE
+
+
+def test_illegal_move_no_candidate_transitions_to_uncertain():
+    """Physical board change with zero legal candidates must escalate to UNCERTAIN, not STABLE."""
+    from src.reasoning.candidate_generator import LegalMoveCandidateGenerator
+    from src.reasoning.decision_gate import DecisionGate
+    from src.reasoning.game_state_manager import GameStateManager
+    from src.reasoning.scorer import MoveScorer
+    from src.core.datatypes import CellObservation, CHESS_SQUARES, PIECE_CLASSES
+    from src.reasoning.candidate_generator import board_square_to_piece_class
+    import chess
+
+    cfg = TemporalConfig(settling_time_sec=0.05, verifying_stable_frames=1, debounce_frames=1)
+    state_mgr = GameStateManager()
+    cand_gen = LegalMoveCandidateGenerator()
+    # Force empty candidate list to verify FSM handles DecisionStatus.NO_CANDIDATE cleanly
+    cand_gen.generate_candidates = lambda board, obs: []  # type: ignore[method-assign]
+    scorer = MoveScorer()
+    gate = DecisionGate()
+    fsm = GameFSM(
+        config=cfg,
+        candidate_generator=cand_gen,
+        scorer=scorer,
+        decision_gate=gate,
+        game_state_manager=state_mgr,
+    )
+    calib_geom = BoardGeometry(
+        corners=[(0.0, 0.0), (640.0, 0.0), (640.0, 640.0), (0.0, 640.0)],
+        is_valid=True,
+        orientation_calibrated=True,
+    )
+    # Build illegal board observation: white queen moved straight from d1 to d5 illegally
+    illegal_board = chess.Board()
+    illegal_board.remove_piece_at(chess.D1)
+    illegal_board.set_piece_at(chess.D5, chess.Piece(chess.QUEEN, chess.WHITE))
+    cells = {}
+    for sq in CHESS_SQUARES:
+        cls_name = board_square_to_piece_class(illegal_board, chess.parse_square(sq))
+        probs = {c: (0.99 if c == cls_name else 0.01 / (len(PIECE_CLASSES) - 1)) for c in PIECE_CLASSES}
+        cells[sq] = CellObservation(
+            square=sq,
+            probabilities=probs,
+            predicted_piece=cls_name,
+            confidence=0.99,
+            is_occupied=(cls_name != "empty"),
+        )
+    obs_calib = BoardObservation.create_default(frame_id=1, timestamp=0.1, geometry=calib_geom)
+    assert fsm.update(obs_calib) == FSMState.CALIBRATING
+    assert fsm.update(obs_calib) == FSMState.STABLE
+
+    obs_move = BoardObservation(
+        frame_id=2, timestamp=0.2, cells=cells, motion_detected=True, motion_level=0.2,
+        hand_present=False, geometry_confidence=1.0, geometry=calib_geom,
+    )
+    assert fsm.update(obs_move) == FSMState.MOVING
+    obs_settled = obs_move.model_copy(update={"frame_id": 3, "timestamp": 1.5, "motion_detected": False, "motion_level": 0.0})
+    assert fsm.update(obs_settled) == FSMState.SETTLING
+    obs_verify = obs_settled.model_copy(update={"frame_id": 4, "timestamp": 2.5})
+    assert fsm.update(obs_verify) == FSMState.VERIFYING
+    obs_commit = obs_settled.model_copy(update={"frame_id": 5, "timestamp": 2.6})
+    state = fsm.update(obs_commit)
+    assert state == FSMState.UNCERTAIN
+    assert fsm.last_decision is not None
+    assert "d1" in fsm.last_decision.uncertain_squares and "d5" in fsm.last_decision.uncertain_squares
+
+
+def test_uncertain_freezes_without_motion_and_retriggers_on_motion():
+    """Static frames during UNCERTAIN must not re-score/mutate decision; only physical motion re-verifies."""
+    from src.reasoning.candidate_generator import LegalMoveCandidateGenerator
+    from src.reasoning.decision_gate import DecisionGate
+    from src.reasoning.game_state_manager import GameStateManager
+    from src.reasoning.scorer import MoveScorer
+
+    cfg = TemporalConfig(settling_time_sec=0.05, verifying_stable_frames=2, debounce_frames=1)
+    score_calls = 0
+
+    class CountingGate(DecisionGate):
+        def evaluate(self, ranked, observation):
+            nonlocal score_calls
+            score_calls += 1
+            return super().evaluate(ranked, observation)
+
+    fsm = GameFSM(
+        config=cfg,
+        candidate_generator=LegalMoveCandidateGenerator(),
+        scorer=MoveScorer(),
+        decision_gate=CountingGate(),
+        game_state_manager=GameStateManager(),
+    )
+    fsm.force_state(FSMState.UNCERTAIN)
+    geom = BoardGeometry(
+        corners=[(0.0, 0.0), (640.0, 0.0), (640.0, 640.0), (0.0, 640.0)],
+        is_valid=True,
+        orientation_calibrated=True,
+    )
+    for fid in range(1, 8):
+        assert (
+            fsm.update(
+                BoardObservation.create_default(
+                    frame_id=fid,
+                    timestamp=fid * 0.2,
+                    geometry=geom,
+                    motion_detected=False,
+                    hand_present=False,
+                )
+            )
+            == FSMState.UNCERTAIN
+        )
+    assert score_calls == 0
+
+    # Physical hand/piece motion re-enters MOVING cleanly for takeback/correction
+    assert (
+        fsm.update(
+            BoardObservation.create_default(
+                frame_id=8,
+                timestamp=2.0,
+                geometry=geom,
+                motion_detected=True,
+                motion_level=0.2,
+            )
+        )
+        == FSMState.MOVING
+    )

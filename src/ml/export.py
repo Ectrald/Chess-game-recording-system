@@ -131,3 +131,68 @@ def verify_onnx_numerical_parity(
 
     return is_valid, max_diff
 
+
+def quantize_onnx_static_int8(
+    fp32_onnx_path: Union[str, Path],
+    int8_onnx_path: Union[str, Path],
+    calibration_tensors: List[np.ndarray],
+) -> bool:
+    """Applies calibrated QDQ Static INT8 quantization to a Stage-3 ONNX piece classifier.
+
+    Note: Static INT8 with calibration data accelerates Conv-heavy CPU backbones (~2x), whereas
+    uncalibrated Dynamic INT8/FP16 rarely speeds up x86 Conv layers cleanly.
+    """
+    if not ORT_AVAILABLE or not calibration_tensors:
+        logger.warning("ONNX Runtime or calibration tensors unavailable for static INT8 quantization.")
+        return False
+
+    try:
+        from onnxruntime.quantization import (
+            CalibrationDataReader,
+            CalibrationMethod,
+            QuantFormat,
+            QuantType,
+            quantize_static,
+        )
+    except ImportError:
+        logger.warning("onnxruntime.quantization not installed; skipping INT8 quantization.")
+        return False
+
+    fp32_p = Path(fp32_onnx_path)
+    int8_p = Path(int8_onnx_path)
+    if not fp32_p.is_file():
+        logger.warning("Source FP32 ONNX model not found: %s", fp32_p)
+        return False
+
+    sess = ort.InferenceSession(str(fp32_p), providers=["CPUExecutionProvider"])
+    input_name = sess.get_inputs()[0].name
+
+    class _ArrayDataReader(CalibrationDataReader):
+        def __init__(self, tensors: List[np.ndarray], name: str) -> None:
+            self._iter = iter(tensors)
+            self._name = name
+
+        def get_next(self) -> Optional[Dict[str, np.ndarray]]:
+            try:
+                arr = next(self._iter)
+                return {self._name: np.ascontiguousarray(arr, dtype=np.float32)}
+            except StopIteration:
+                return None
+
+    int8_p.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        quantize_static(
+            model_input=str(fp32_p),
+            model_output=str(int8_p),
+            calibration_data_reader=_ArrayDataReader(calibration_tensors, input_name),
+            quant_format=QuantFormat.QDQ,
+            activation_type=QuantType.QInt8,
+            weight_type=QuantType.QInt8,
+            calibrate_method=CalibrationMethod.MinMax,
+        )
+        logger.info("Successfully quantized ONNX model to Static INT8 at %s", int8_p)
+        return int8_p.is_file()
+    except Exception as exc:
+        logger.error("Static INT8 quantization failed: %s", exc)
+        return False
+

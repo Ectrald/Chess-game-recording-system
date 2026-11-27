@@ -37,6 +37,21 @@ MODEL_REGISTRY = {
         "default_path": "data/weights/yolov8n_board.pt",
         "description": "Pretrained YOLOv8 chess board and corner detector",
     },
+    "chessq_vit_int8": {
+        "url": "https://huggingface.co/joelseytre/chessq-lite/resolve/main/cq-vit-s-644-v6-seed1-onnx-int8-r1.onnx",
+        "default_path": "models/chessq_vit_int8.onnx",
+        "description": "Holistic ViT-S14 INT8 whole-board FEN & viewing-direction ONNX classifier (ChessQ-Lite)",
+    },
+    "chessq_vit_config": {
+        "url": "https://huggingface.co/joelseytre/chessq-lite/resolve/main/cq-vit-s-644-v6-seed1-onnx-int8-r1.json",
+        "default_path": "models/chessq_vit_int8.json",
+        "description": "ChessQ-Lite ONNX preprocessing & output schema metadata",
+    },
+    "dinov2_small_int8": {
+        "url": "https://huggingface.co/onnx-community/dinov2-small/resolve/main/onnx/model_int8.onnx",
+        "default_path": "models/dinov2_small_int8.onnx",
+        "description": "DINOv2-Small INT8 patch embedding model for illumination-invariant change detection",
+    },
 }
 
 
@@ -100,42 +115,93 @@ def ensure_piece_classifier_onnx(output_path: Union[str, Path] = "models/piece_c
         return True
 
     out_file.parent.mkdir(parents=True, exist_ok=True)
-    zip_path = out_file.parent / "piece_classifier.zip"
+    piece_zip_path = out_file.parent / "piece_classifier.zip"
+    occ_zip_path = out_file.parent / "occupancy_classifier.zip"
 
-    # Step 1: Download chesscog pretrained piece classifier weights zip
+    # Step 1: Download chesscog pretrained weights zips
     chesscog_url = MODEL_REGISTRY["piece_classifier"]["url"]
+    occ_url = MODEL_REGISTRY["occupancy_classifier"]["url"]
     logger.info("Downloading chesscog pretrained piece classifier from %s ...", chesscog_url)
-    if not download_file(chesscog_url, zip_path):
+    if not download_file(chesscog_url, piece_zip_path):
         logger.error("Failed to download chesscog piece classifier weights.")
+        return False
+    logger.info("Downloading chesscog pretrained occupancy classifier from %s ...", occ_url)
+    if not download_file(occ_url, occ_zip_path):
+        logger.error("Failed to download chesscog occupancy classifier weights.")
         return False
 
     # Step 2: Extract weights
-    extract_dir = out_file.parent / "chesscog_piece"
+    extract_piece_dir = out_file.parent / "chesscog_piece"
+    extract_occ_dir = out_file.parent / "chesscog_occupancy"
     try:
-        with zipfile.ZipFile(zip_path, "r") as zf:
-            zf.extractall(extract_dir)
-        logger.info("Extracted chesscog weights to %s", extract_dir)
+        with zipfile.ZipFile(piece_zip_path, "r") as zf:
+            zf.extractall(extract_piece_dir)
+        with zipfile.ZipFile(occ_zip_path, "r") as zf:
+            zf.extractall(extract_occ_dir)
+        logger.info("Extracted chesscog weights to %s and %s", extract_piece_dir, extract_occ_dir)
     except Exception as exc:
-        logger.warning("Could not extract zip %s: %s", zip_path, exc)
+        logger.warning("Could not extract chesscog zips: %s", exc)
 
-    # Step 3: Convert/export to ONNX model
+    # Step 3: Load pickled chesscog PyTorch models and export combined 13-class ONNX
     try:
+        import types
         import torch
-        from src.ml.models import SingleHeadPieceClassifier
+        import torch.nn as nn
+        import torch.nn.functional as F
         from src.ml.export import export_model_to_onnx
 
-        logger.info("Exporting baseline piece classifier model to ONNX: %s ...", out_file)
-        model = SingleHeadPieceClassifier(architecture="resnet18", pretrained=False)
-        # Check if InceptionV3.pt or other weights exist to transfer
-        pt_path = extract_dir / "InceptionV3.pt"
-        if pt_path.is_file():
-            try:
-                ckpt = torch.load(pt_path, map_location="cpu")
-                logger.info("Loaded chesscog PyTorch checkpoint: %s (keys: %s)", pt_path, list(ckpt.keys())[:5] if isinstance(ckpt, dict) else type(ckpt))
-            except Exception as load_err:
-                logger.warning("Could not transfer raw PyTorch state dict: %s", load_err)
+        occ_pt = extract_occ_dir / "ResNet.pt"
+        pc_pt = extract_piece_dir / "InceptionV3.pt"
+        if not (occ_pt.is_file() and pc_pt.is_file()):
+            logger.error("Expected chesscog checkpoints missing: %s, %s", occ_pt, pc_pt)
+            return False
 
-        ok = export_model_to_onnx(model, out_file, input_shape=(64, 3, 112, 112))
+        for mod_name in [
+            "chesscog",
+            "chesscog.occupancy_classifier",
+            "chesscog.occupancy_classifier.models",
+            "chesscog.piece_classifier",
+            "chesscog.piece_classifier.models",
+        ]:
+            if mod_name not in sys.modules:
+                sys.modules[mod_name] = types.ModuleType(mod_name)
+
+        class _StubModule(nn.Module):
+            pass
+
+        sys.modules["chesscog.occupancy_classifier.models"].ResNet = _StubModule
+        sys.modules["chesscog.piece_classifier.models"].InceptionV3 = _StubModule
+
+        occ_ckpt = torch.load(occ_pt, map_location="cpu", weights_only=False)
+        pc_ckpt = torch.load(pc_pt, map_location="cpu", weights_only=False)
+        occ_net = occ_ckpt.model.eval()
+        pc_net = pc_ckpt.model.eval()
+        if hasattr(pc_net, "aux_logits"):
+            pc_net.aux_logits = False
+
+        class _ChesscogCombined(nn.Module):
+            def __init__(self, occ_m: nn.Module, pc_m: nn.Module) -> None:
+                super().__init__()
+                self.occ_model = occ_m
+                self.pc_model = pc_m
+                self.register_buffer(
+                    "perm_idx",
+                    torch.tensor([9, 8, 6, 11, 10, 7, 3, 2, 0, 5, 4, 1], dtype=torch.long),
+                )
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                x_occ = F.interpolate(x, size=(100, 100), mode="bilinear", align_corners=False)
+                p_occ = F.softmax(self.occ_model(x_occ), dim=-1)
+                x_pc = F.interpolate(x, size=(299, 299), mode="bilinear", align_corners=False)
+                p_pc = F.softmax(self.pc_model(x_pc), dim=-1).index_select(1, self.perm_idx)
+                return torch.cat([p_occ[:, 0:1], p_occ[:, 1:2] * p_pc], dim=-1)
+
+        combined = _ChesscogCombined(occ_net, pc_net).eval()
+        # Also export standalone ResNet occupancy_classifier ONNX (expects tight 100x100 crops)
+        occ_onnx_out = out_file.parent / "occupancy_classifier.onnx"
+        export_model_to_onnx(occ_net, occ_onnx_out, input_shape=(64, 3, 100, 100))
+        logger.info("Exporting combined chesscog 13-class classifier to ONNX: %s ...", out_file)
+        ok = export_model_to_onnx(combined, out_file, input_shape=(64, 3, 112, 112))
         if ok and out_file.is_file():
             logger.info("Successfully produced ONNX model at %s (%d bytes)", out_file, out_file.stat().st_size)
             return True

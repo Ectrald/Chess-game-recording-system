@@ -111,24 +111,30 @@ class RecoveryManager:
         if not is_valid:
             raise ValueError(f"Journal integrity check failed: {error_reason}")
 
-        # 3. Read events
-        events = self.repository.read_all_events()
-        if not events:
+        # 3. Read all audited events and fold rollbacks/anomalies into active move list
+        all_events = self.repository.read_all_events()
+        if not all_events:
             return GameStateManager(), []
 
-        # 4. Replay into fresh GameStateManager
-        initial_fen = events[0].fen_before
+        events: List[MoveEvent] = []
+        for ev in all_events:
+            ev_type = getattr(ev, "event_type", "move")
+            if ev_type == "move":
+                events.append(ev)
+            elif ev_type == "rollback" and events:
+                events.pop()
+
+        # 4. Replay active moves into fresh GameStateManager
+        initial_fen = all_events[0].fen_before
         state_mgr = GameStateManager(initial_fen=initial_fen)
 
-        # Replay to verify full validity and set final board state
-        final_board = state_mgr.replay(events)
-        state_mgr._board = final_board
-
-        # Restore history and committed keys internally
-        state_mgr._history = list(events)
-        state_mgr._committed_keys = {
-            ev.idempotency_key for ev in events if ev.idempotency_key
-        }
+        if events:
+            final_board = state_mgr.replay(events)
+            state_mgr._board = final_board
+            state_mgr._history = list(events)
+            state_mgr._committed_keys = {
+                ev.idempotency_key for ev in events if ev.idempotency_key
+            }
 
         logger.info(
             "Successfully recovered session with %d moves; current FEN: %s",

@@ -228,6 +228,31 @@ class GeometryTransformer:
         )
 
     @staticmethod
+    def warp_padded_board(
+        image: np.ndarray,
+        homography_matrix: np.ndarray,
+        target_size: int = 640,
+        padding: int = 80,
+        interpolation: int = cv2.INTER_LINEAR,
+    ) -> np.ndarray:
+        """Warps image preserving surrounding real-frame context outside the [0..target_size] border."""
+        if padding <= 0:
+            return GeometryTransformer.warp_board(image, homography_matrix, target_size, interpolation)
+        shift = np.array(
+            [[1.0, 0.0, float(padding)], [0.0, 1.0, float(padding)], [0.0, 0.0, 1.0]],
+            dtype=np.float64,
+        )
+        padded_h = shift @ np.asarray(homography_matrix, dtype=np.float64)
+        out_size = int(target_size + 2 * padding)
+        return cv2.warpPerspective(
+            image,
+            padded_h,
+            (out_size, out_size),
+            flags=interpolation,
+            borderMode=cv2.BORDER_REPLICATE,
+        )
+
+    @staticmethod
     def project_image_to_board(points: np.ndarray, homography_matrix: np.ndarray) -> np.ndarray:
         """Projects array of 2D points (N, 2) from source frame space to board space."""
         pts = np.asarray(points, dtype=np.float32).reshape(-1, 1, 2)

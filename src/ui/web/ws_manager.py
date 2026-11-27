@@ -37,10 +37,12 @@ class WebSocketManager:
     async def connect(self, websocket: WebSocket) -> None:
         """Accepts and registers a new client WebSocket connection."""
         await websocket.accept()
-        self._active_connections.add(websocket)
-        if self._loop is None:
-            self._loop = asyncio.get_running_loop()
-        logger.info("WebSocket client connected. Total clients: %d", len(self._active_connections))
+        async with self._lock:
+            self._active_connections.add(websocket)
+            if self._loop is None:
+                self._loop = asyncio.get_running_loop()
+            count = len(self._active_connections)
+        logger.info("WebSocket client connected. Total clients: %d", count)
 
     def disconnect(self, websocket: WebSocket) -> None:
         """Removes a client WebSocket from the active connection pool."""
@@ -49,21 +51,25 @@ class WebSocketManager:
 
     async def broadcast(self, message: Dict[str, Any]) -> None:
         """Broadcasts a JSON-serializable message payload to all active clients."""
-        if not self._active_connections:
+        async with self._lock:
+            targets = list(self._active_connections)
+        if not targets:
             return
 
         payload = json.dumps(message)
         dead_sockets: List[WebSocket] = []
 
-        for ws in list(self._active_connections):
+        for ws in targets:
             try:
                 await ws.send_text(payload)
             except Exception as exc:
                 logger.debug("Failed to send WebSocket message to client (%s), pruning.", exc)
                 dead_sockets.append(ws)
 
-        for ws in dead_sockets:
-            self._active_connections.discard(ws)
+        if dead_sockets:
+            async with self._lock:
+                for ws in dead_sockets:
+                    self._active_connections.discard(ws)
 
     def broadcast_threadsafe(self, message: Dict[str, Any]) -> None:
         """Dispatches broadcast from background OS thread into the asyncio event loop."""
