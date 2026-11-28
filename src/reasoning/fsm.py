@@ -9,7 +9,7 @@ Implements game recording state transitions, settling debounce timers, and verif
 from __future__ import annotations
 
 import logging
-from typing import Callable, List, Optional
+from typing import Any, Callable, List, Optional
 from collections import deque
 
 from src.core.config import TemporalConfig
@@ -91,6 +91,7 @@ class GameFSM:
         self._settle_start_time = None
         self._verify_buffer.clear()
         self._lost_frame_count = 0
+        self._uncertain_motion_streak = 0
         self._last_decision = None
 
     def pause(self) -> None:
@@ -100,15 +101,14 @@ class GameFSM:
 
     def resume(self, has_geometry: bool = True, orientation_ready: bool = True) -> None:
         """Resumes processing from paused or uncertain state based on board readiness."""
-        if self._state == FSMState.PAUSED:
+        self._uncertain_motion_streak = 0
+        if self._state in (FSMState.PAUSED, FSMState.UNCERTAIN):
             if not has_geometry:
                 self._set_state(FSMState.LOCATING_BOARD, observation=None)
             elif not orientation_ready:
                 self._set_state(FSMState.CALIBRATING, observation=None)
             else:
                 self._set_state(FSMState.STABLE, observation=None)
-        elif self._state == FSMState.UNCERTAIN:
-            self._set_state(FSMState.STABLE, observation=None)
 
     def stop(self) -> None:
         """Permanently transitions FSM to STOPPED state."""
@@ -116,6 +116,7 @@ class GameFSM:
 
     def force_state(self, state: FSMState) -> None:
         """Forces state transition for administrative overrides and testing."""
+        self._uncertain_motion_streak = 0
         self._set_state(state, observation=None)
 
     def _set_state(self, new_state: FSMState, observation: Optional[BoardObservation]) -> None:
@@ -174,10 +175,12 @@ class GameFSM:
                     self._settle_start_time = None
                     self._verify_buffer.clear()
                     observation.fsm_state = self._state
+                    self._last_timestamp = observation.timestamp
                     return self._state
             elif self._state == FSMState.IDLE:
                 self._set_state(FSMState.LOCATING_BOARD, observation)
                 observation.fsm_state = self._state
+                self._last_timestamp = observation.timestamp
                 return self._state
         else:
             self._lost_frame_count = 0
@@ -205,7 +208,7 @@ class GameFSM:
             if observation.geometry is not None:
                 orientation_ready = bool(observation.geometry.orientation_calibrated)
             else:
-                orientation_ready = observation.geometry_confidence >= 0.70
+                orientation_ready = observation.geometry_confidence >= self.min_geometry_confidence
 
             if orientation_ready and not active_disturbance:
                 self._set_state(FSMState.STABLE, observation)
@@ -280,8 +283,12 @@ class GameFSM:
                                     logger.error("Error in on_move_decision callback: %s", exc, exc_info=True)
 
                             if decision.status == DecisionStatus.ACCEPTED and decision.accepted_hypothesis:
-                                self.game_state_manager.commit(decision.accepted_hypothesis, observation)
-                                self._set_state(FSMState.STABLE, observation)
+                                try:
+                                    self.game_state_manager.commit(decision.accepted_hypothesis, observation)
+                                    self._set_state(FSMState.STABLE, observation)
+                                except Exception as exc:
+                                    logger.error("Failed to commit accepted hypothesis %s: %s", decision.accepted_hypothesis.move_uci, exc)
+                                    self._set_state(FSMState.UNCERTAIN, observation)
                             elif decision.status in (
                                 DecisionStatus.UNCERTAIN,
                                 DecisionStatus.REJECTED,
@@ -299,7 +306,8 @@ class GameFSM:
                     self._settle_start_time = None
 
         elif self._state == FSMState.UNCERTAIN:
-            strong_hand = hand and len(observation.get_occluded_squares() if hasattr(observation, "get_occluded_squares") else []) >= 2
+            occluded_list = [sq for sq, cell in observation.cells.items() if cell.is_occluded]
+            strong_hand = hand and len(occluded_list) >= 2
             high_motion = observation.motion_detected and observation.motion_level >= max(
                 0.10, self.config.motion_diff_threshold * 2.5
             )

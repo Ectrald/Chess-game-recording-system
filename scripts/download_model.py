@@ -12,6 +12,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import logging
+import os
 from pathlib import Path
 import sys
 from typing import Optional, Union
@@ -37,6 +38,11 @@ MODEL_REGISTRY = {
         "default_path": "data/weights/yolov8n_board.pt",
         "description": "Pretrained YOLOv8 chess board and corner detector",
     },
+    "hand_landmarker": {
+        "url": "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/1/hand_landmarker.task",
+        "default_path": "data/weights/hand_landmarker.task",
+        "description": "MediaPipe HandLandmarker Tasks bundle for occlusion segmentation",
+    },
     "chessq_vit_int8": {
         "url": "https://huggingface.co/joelseytre/chessq-lite/resolve/main/cq-vit-s-644-v6-seed1-onnx-int8-r1.onnx",
         "default_path": "models/chessq_vit_int8.onnx",
@@ -56,9 +62,10 @@ MODEL_REGISTRY = {
 
 
 def download_file(url: str, output_path: Union[str, Path], expected_sha256: Optional[str] = None) -> bool:
-    """Downloads a file from url or verifies existing cached copy."""
+    """Downloads a file atomically from url (with temp file + optional sha256 verification)."""
     out_file = Path(output_path)
     out_file.parent.mkdir(parents=True, exist_ok=True)
+    tmp_file = out_file.with_name(f"{out_file.name}.tmp.{os.getpid()}")
 
     if out_file.is_file() and out_file.stat().st_size > 1024:
         logger.info("Target file already exists at %s (%d bytes)", out_file, out_file.stat().st_size)
@@ -78,7 +85,8 @@ def download_file(url: str, output_path: Union[str, Path], expected_sha256: Opti
             url,
             headers={"User-Agent": "Mozilla/5.0 (Chess-Game-Recording-System/1.0)"},
         )
-        with urllib.request.urlopen(req, timeout=30) as resp, open(out_file, "wb") as f:
+        hasher = hashlib.sha256()
+        with urllib.request.urlopen(req, timeout=30) as resp, open(tmp_file, "wb") as f:
             total_size = int(resp.headers.get("Content-Length", 0))
             downloaded = 0
             chunk_size = 65536
@@ -87,15 +95,23 @@ def download_file(url: str, output_path: Union[str, Path], expected_sha256: Opti
                 if not chunk:
                     break
                 f.write(chunk)
+                hasher.update(chunk)
                 downloaded += len(chunk)
                 if total_size > 0:
                     pct = (downloaded / total_size) * 100
                     sys.stdout.write(f"\rProgress: {downloaded / (1024*1024):.1f}/{total_size / (1024*1024):.1f} MB ({pct:.1f}%)")
                     sys.stdout.flush()
         print()
+        if expected_sha256 and hasher.hexdigest() != expected_sha256:
+            tmp_file.unlink(missing_ok=True)
+            raise RuntimeError(
+                f"SHA-256 mismatch for {url}: expected {expected_sha256}, got {hasher.hexdigest()}"
+            )
+        os.replace(tmp_file, out_file)
         logger.info("Download completed successfully: %s", out_file)
         return True
     except Exception as exc:
+        tmp_file.unlink(missing_ok=True)
         logger.warning(
             "Download failed (%s). If running in an offline/firewalled environment, "
             "place weights manually at %s.",

@@ -9,11 +9,14 @@ and automatic backend selection according to:
 
 from __future__ import annotations
 
+import hashlib
 import logging
+import math
+import threading
 import time
 from abc import ABC, abstractmethod
 from pathlib import Path
-from typing import Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 import cv2
 import numpy as np
 
@@ -89,16 +92,15 @@ def probabilities_to_cell_observation(
         Populated CellObservation instance.
     """
     probs_arr = np.asarray(probs_13, dtype=np.float32)
-    # Apply stable softmax if raw logits were passed
-    if np.any(probs_arr < 0.0) or np.any(probs_arr > 1.0) or not np.isclose(float(np.sum(probs_arr)), 1.0, atol=0.05):
+    prob_sum = float(np.sum(probs_arr))
+    if np.all(probs_arr >= 0.0) and np.all(probs_arr <= 1.0) and 0.90 <= prob_sum <= 1.10 and prob_sum > 0.0:
+        if not np.isclose(prob_sum, 1.0, atol=1e-4):
+            probs_arr = probs_arr / prob_sum
+    else:
         exp_vals = np.exp(probs_arr - np.max(probs_arr))
         probs_arr = exp_vals / np.sum(exp_vals)
 
     probs_dict = {cls_name: float(probs_arr[i]) for i, cls_name in enumerate(PIECE_CLASSES)}
-
-    best_idx = int(np.argmax(probs_arr))
-    best_cls = PIECE_CLASSES[best_idx]
-    confidence = float(probs_arr[best_idx])
 
     # Occupancy decision based on configured threshold
     empty_prob = probs_dict["empty"]
@@ -108,6 +110,11 @@ def probabilities_to_cell_observation(
     if not is_occ:
         best_cls = "empty"
         confidence = empty_prob
+    else:
+        # Select highest-probability piece class (indices 1..12) so occupied never contradicts predicted_piece='empty'
+        best_piece_idx = 1 + int(np.argmax(probs_arr[1:]))
+        best_cls = PIECE_CLASSES[best_piece_idx]
+        confidence = float(probs_arr[best_piece_idx])
 
     return CellObservation(
         square=square,
@@ -262,7 +269,8 @@ class ONNXPieceClassifier(BasePieceClassifier):
         squares: Optional[Sequence[str]] = None,
     ) -> Dict[str, CellObservation]:
         """Classifies only requested squares in a single dynamic-batch ONNX forward pass."""
-        target_squares = [sq for sq in (squares or list(cell_patches.keys())) if sq in cell_patches]
+        requested = list(squares) if squares is not None else list(cell_patches.keys())
+        target_squares = [sq for sq in requested if sq in cell_patches]
         if not target_squares:
             return {}
         if not self._available or self._session is None:
@@ -399,7 +407,8 @@ class ONNXOccupancyClassifier:
         """Returns P(occupied) in [0, 1] for each requested square."""
         if not self._available or self._session is None:
             return {}
-        target = [sq for sq in (squares or CHESS_SQUARES) if sq in cell_crops]
+        requested = list(squares) if squares is not None else list(CHESS_SQUARES)
+        target = [sq for sq in requested if sq in cell_crops]
         if not target:
             return {}
         batch = preprocess_patches_to_batch(
@@ -514,6 +523,8 @@ class WholeBoardChessQClassifier:
         if not self._available:
             return BoardOrientation.UNKNOWN, 0.0
         _, ang = self._run_raw(board_bgr, add_padding=add_padding)
+        if not math.isfinite(ang):
+            return BoardOrientation.UNKNOWN, 0.0
         if -45.0 <= ang <= 45.0:
             ori = BoardOrientation.WHITE_BOTTOM
         elif -135.0 <= ang < -45.0:
@@ -565,7 +576,8 @@ class DINOv2PatchChangeDetector:
         self._input_name: Optional[str] = None
         self._available = False
         self._last_latency_ms = 0.0
-        self._cached_before_sig: Optional[Tuple[int, int, float, int]] = None
+        self._lock = threading.Lock()
+        self._cached_before_sig: Optional[Tuple[int, int, str]] = None
         self._cached_before_grid: Optional[np.ndarray] = None
 
         path = Path(model_path)
@@ -595,16 +607,31 @@ class DINOv2PatchChangeDetector:
     def last_latency_ms(self) -> float:
         return self._last_latency_ms
 
+    def reset(self) -> None:
+        """Clears cached reference board embedding (e.g. on recalibrate or board lost)."""
+        with self._lock:
+            self._cached_before_sig = None
+            self._cached_before_grid = None
+
     @staticmethod
-    def _image_sig(img: np.ndarray) -> Tuple[int, int, float, int]:
-        step = max(1, img.shape[0] // 8)
-        sample = img[::step, ::step, 0]
-        return (int(img.shape[0]), int(img.shape[1]), float(np.sum(sample)), int(img[img.shape[0] // 2, img.shape[1] // 2, 0]))
+    def _image_sig(img: np.ndarray) -> Tuple[int, int, str]:
+        thumb = cv2.resize(img, (16, 16), interpolation=cv2.INTER_AREA)
+        return (int(img.shape[0]), int(img.shape[1]), hashlib.sha1(thumb.tobytes()).hexdigest())
 
     def _embed_8x8(self, board_bgr: np.ndarray) -> np.ndarray:
         if not self._available or self._session is None or self._input_name is None:
             raise RuntimeError("DINOv2PatchChangeDetector is not initialized")
-        rgb = cv2.cvtColor(board_bgr, cv2.COLOR_BGR2RGB)
+        img = board_bgr
+        if img.dtype != np.uint8:
+            img = np.clip(img, 0, 255).astype(np.uint8)
+        if img.ndim == 2:
+            rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
+        elif img.ndim == 3 and img.shape[2] == 4:
+            rgb = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+        elif img.ndim == 3 and img.shape[2] == 1:
+            rgb = cv2.cvtColor(img[:, :, 0], cv2.COLOR_GRAY2RGB)
+        else:
+            rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
         rz = cv2.resize(rgb, (224, 224), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255.0
         mean = np.array([0.485, 0.456, 0.406], dtype=np.float32)
         std = np.array([0.229, 0.224, 0.225], dtype=np.float32)
@@ -627,25 +654,25 @@ class DINOv2PatchChangeDetector:
             return {sq: 0.0 for sq in CHESS_SQUARES}
         t0 = time.perf_counter()
         sig_b = self._image_sig(warped_before)
-        if self._cached_before_sig == sig_b and self._cached_before_grid is not None:
-            emb_b = self._cached_before_grid
-        else:
-            emb_b = self._embed_8x8(warped_before)
-            self._cached_before_sig = sig_b
-            self._cached_before_grid = emb_b
+        with self._lock:
+            if self._cached_before_sig == sig_b and self._cached_before_grid is not None:
+                emb_b = self._cached_before_grid
+            else:
+                emb_b = self._embed_8x8(warped_before)
+                self._cached_before_sig = sig_b
+                self._cached_before_grid = emb_b
 
-        emb_a = self._embed_8x8(warped_after)
-        self._last_latency_ms = (time.perf_counter() - t0) * 1000.0
+            emb_a = self._embed_8x8(warped_after)
+            self._last_latency_ms = (time.perf_counter() - t0) * 1000.0
 
         cos_dist = np.clip(1.0 - np.sum(emb_b * emb_a, axis=-1), 0.0, 2.0)  # (8, 8)
-        ah, aw = warped_after.shape[:2]
-        cell_h = max(1.0, ah / 8.0)
-        cell_w = max(1.0, aw / 8.0)
+        board_dim = float(getattr(roi_extractor, "board_size", warped_after.shape[0]) or warped_after.shape[0])
+        cell_dim = max(1.0, board_dim / 8.0)
         out: Dict[str, float] = {}
         for sq in CHESS_SQUARES:
             x0, y0, x1, y1 = roi_extractor.get_square_coordinates(sq, orientation)
-            r = min(7, max(0, int(((y0 + y1) * 0.5) / cell_h)))
-            c = min(7, max(0, int(((x0 + x1) * 0.5) / cell_w)))
+            r = min(7, max(0, int(((y0 + y1) * 0.5) / cell_dim)))
+            c = min(7, max(0, int(((x0 + x1) * 0.5) / cell_dim)))
             out[sq] = float(cos_dist[r, c])
         return out
 

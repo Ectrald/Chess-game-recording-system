@@ -180,6 +180,20 @@ class VisualHUDComposer:
 
         return canvas
 
+    @staticmethod
+    def _ensure_bgr_uint8(frame_bgr: Optional[np.ndarray]) -> np.ndarray:
+        """Normalizes arbitrary input frame arrays into non-empty 3-channel BGR uint8."""
+        if frame_bgr is None or not isinstance(frame_bgr, np.ndarray) or frame_bgr.size == 0:
+            return np.zeros((360, 640, 3), dtype=np.uint8)
+        img = frame_bgr
+        if img.dtype != np.uint8:
+            img = np.clip(img, 0, 255).astype(np.uint8)
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        elif img.ndim == 3 and img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        return img.copy()
+
     def compose(
         self,
         frame_bgr: np.ndarray,
@@ -198,12 +212,13 @@ class VisualHUDComposer:
         Returns:
             Composite BGR canvas of size [self.height, self.width, 3].
         """
+        safe_frame = self._ensure_bgr_uint8(frame_bgr)
         canvas = np.zeros((self.height, self.width, 3), dtype=np.uint8)
 
         # ---------------------------------------------------------------------
         # 1. Left Video Feed Pane
         # ---------------------------------------------------------------------
-        video_pane = self._render_video_feed(frame_bgr, state, corners, hand_mask)
+        video_pane = self._render_video_feed(safe_frame, state, corners, hand_mask)
         canvas[:, :self.video_width] = video_pane
 
         # ---------------------------------------------------------------------
@@ -233,7 +248,7 @@ class VisualHUDComposer:
         hand_mask: Optional[np.ndarray] = None,
     ) -> np.ndarray:
         """Renders video feed with board boundary, hand overlay and status HUD directly on frame."""
-        vis = frame_bgr.copy()
+        vis = self._ensure_bgr_uint8(frame_bgr)
         h, w = vis.shape[:2]
 
         # Draw board boundary polygon & corners
@@ -249,7 +264,8 @@ class VisualHUDComposer:
             if hm_h == h and hm_w == w:
                 red_tint = np.full_like(vis, (0, 0, 180))
                 mask_bool = hand_mask > 0
-                vis[mask_bool] = cv2.addWeighted(vis[mask_bool], 0.6, red_tint[mask_bool], 0.4, 0)
+                if np.any(mask_bool):
+                    vis[mask_bool] = cv2.addWeighted(vis[mask_bool], 0.6, red_tint[mask_bool], 0.4, 0)
 
         # FSM State Badge (Top-left)
         state_color = FSM_COLOR_MAP.get(state.fsm_state, (100, 100, 100))
@@ -319,9 +335,11 @@ class VisualHUDComposer:
 
         # Resize video preserving aspect ratio with letterboxing
         h_src, w_src = frame_bgr.shape[:2]
+        if h_src <= 0 or w_src <= 0:
+            return np.zeros((target_h, target_w, 3), dtype=np.uint8)
         scale = min(target_w / w_src, target_h / h_src)
-        scaled_w = int(w_src * scale)
-        scaled_h = int(h_src * scale)
+        scaled_w = max(1, int(w_src * scale))
+        scaled_h = max(1, int(h_src * scale))
 
         resized = cv2.resize(frame_bgr, (scaled_w, scaled_h), interpolation=cv2.INTER_LINEAR)
         pane = np.zeros((target_h, target_w, 3), dtype=np.uint8)
@@ -351,8 +369,9 @@ class VisualHUDComposer:
                 sub_pane = pane[off_y:off_y + scaled_h, off_x:off_x + scaled_w]
                 red_tint = np.full_like(sub_pane, (0, 0, 180))
                 mask_bool = resized_mask > 0
-                sub_pane[mask_bool] = cv2.addWeighted(sub_pane[mask_bool], 0.6, red_tint[mask_bool], 0.4, 0)
-                pane[off_y:off_y + scaled_h, off_x:off_x + scaled_w] = sub_pane
+                if np.any(mask_bool):
+                    sub_pane[mask_bool] = cv2.addWeighted(sub_pane[mask_bool], 0.6, red_tint[mask_bool], 0.4, 0)
+                    pane[off_y:off_y + scaled_h, off_x:off_x + scaled_w] = sub_pane
 
         # FSM State Badge (Top-left)
         state_color = FSM_COLOR_MAP.get(state.fsm_state, (100, 100, 100))
@@ -440,11 +459,12 @@ class VisualHUDComposer:
                 except Exception:
                     last_move = None
 
-            board_size = min(w - 40, 240)
-            board_img = self.render_virtual_board(board, size=board_size, last_move=last_move)
-            bx = (w - board_size) // 2
-            sidebar[curr_y:curr_y + board_size, bx:bx + board_size] = board_img
-            curr_y += board_size + 20
+            board_size = min(max(16, w - 40), max(16, h - curr_y - 40), 240)
+            if w > 40 and curr_y + board_size <= h:
+                board_img = self.render_virtual_board(board, size=board_size, last_move=last_move)
+                bx = (w - board_size) // 2
+                sidebar[curr_y:curr_y + board_size, bx:bx + board_size] = board_img
+                curr_y += board_size + 20
 
         # ---------------------------------------------------------------------
         # 2. Stockfish Evaluation Gauge
@@ -609,9 +629,10 @@ class VisualHUDComposer:
     def _draw_uncertainty_modal(self, canvas: np.ndarray, state: PipelineState) -> None:
         """Draws operator intervention alert modal when FSM enters UNCERTAIN state."""
         h, w = canvas.shape[:2]
-        modal_w, modal_h = 560, 220
-        mx = (w - modal_w) // 2
-        my = (h - modal_h) // 2
+        modal_w = min(560, max(120, w - 20))
+        modal_h = min(220, max(80, h - 20))
+        mx = max(0, (w - modal_w) // 2)
+        my = max(0, (h - modal_h) // 2)
 
         # Dim background
         overlay = canvas.copy()

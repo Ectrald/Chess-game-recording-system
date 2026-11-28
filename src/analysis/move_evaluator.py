@@ -72,7 +72,10 @@ class MoveEvaluator:
         is_white_mover = (len(fen_parts) > 1 and fen_parts[1] == "w")
 
         raw_before = score_to_numerical(eval_before)
-        raw_after = score_to_numerical(eval_after)
+        if eval_after is not None and eval_after.mate_in == 0:
+            raw_after = 10000 if is_white_mover else -10000
+        else:
+            raw_after = score_to_numerical(eval_after)
 
         # Normalize to mover's perspective
         mover_before = raw_before if is_white_mover else -raw_before

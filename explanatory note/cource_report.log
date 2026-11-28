@@ -1,4 +1,4 @@
-This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026/Arch Linux) (preloaded format=pdflatex 2026.11.10)  14 NOV 2026 15:35
+This is pdfTeX, Version 3.141592653-2.6-1.40.29 (TeX Live 2026/Arch Linux) (preloaded format=pdflatex 2026.11.10)  28 NOV 2026 13:56
 entering extended mode
  restricted \write18 enabled.
  %&-line parsing enabled.
@@ -1358,25 +1358,25 @@ pdfTeX warning (ext4): destination with the same identifier (name{page.1}) has
 been already used, duplicate ignored
 <to be read again> 
                    \relax 
-l.36 ...»СЊРЅРѕР№ СЃРёСЃС‚РµРјС‹}{39}{section.0.3}
+l.36 ...»СЊРЅРѕР№ СЃРёСЃС‚РµРјС‹}{40}{section.0.3}
                                                   % [1])
 \tf@toc=\write5
 \openout5 = `cource_report.toc'.
 
  [2])
-(./sections/reduction.tex) (./sections/intro.tex [3
+(./sections/reduction.tex [3
 
-]
+]) (./sections/intro.tex [4]
 Underfull \hbox (badness 2173) in paragraph at lines 14--15
 []\T2A/cmr/m/n/14.4 (+20) спроектировать вза-и-мо-дей-ствие ней-ро-био-ни-че-ск
 о-го и логико-
  []
 
-[4
+[5
 
-]) (./sections/sec_analysis.tex [5] [6
+]) (./sections/sec_analysis.tex [6] [7
 
-] [7] [8] [9]
+] [8] [9] [10]
 Underfull \hbox (badness 10000) in paragraph at lines 59--59
 []|\T2A/cmr/bx/n/14.4 (+20) Основной
  []
@@ -1461,19 +1461,19 @@ Overfull \hbox (22.8145pt too wide) in paragraph at lines 67--67
 []|\T2A/cmr/m/n/14.4 (-20) Формализованная
  []
 
-[10] [11]) (./sections/sec_designing.tex [12]
+[11] [12]) (./sections/sec_designing.tex [13]
 
 pdfTeX warning: pdflatex (file ./picture/design_figures/use_case.pdf): PDF incl
 usion: found PDF version <2.0>, but at most version <1.7> allowed
-<picture/design_figures/use_case.pdf, id=261, 462.7689pt x 276.36247pt>
+<picture/design_figures/use_case.pdf, id=295, 462.7689pt x 276.36247pt>
 File: picture/design_figures/use_case.pdf Graphic file (type pdf)
 <use picture/design_figures/use_case.pdf>
 Package pdftex.def Info: picture/design_figures/use_case.pdf  used on input lin
 e 37.
 (pdftex.def)             Requested size: 413.13632pt x 246.7293pt.
-[13
+[14
 
-] [14 <./picture/design_figures/use_case.pdf>]
+] [15 <./picture/design_figures/use_case.pdf>]
 LaTeX Font Info:    Trying to load font information for T2A+cmtt on input line 
 45.
 
@@ -1484,98 +1484,350 @@ Package microtype Info: Loading generic protrusion settings for font family
 (microtype)             `cmtt' (encoding: T2A).
 (microtype)             For optimal results, create family-specific settings.
 (microtype)             See the microtype manual for details.
-
-Underfull \hbox (badness 3977) in paragraph at lines 60--61
-\T2A/cmr/m/n/14.4 (+20) тек-ти-ру-ет дос-ку с по-мо-щью двух-ста-дий-ной мо-де-
-ли (YOLOv8n +
- []
-
-[15] [16]
+ [16] [17]
 
 pdfTeX warning: pdflatex (file ./picture/design_figures/sequence_register.pdf):
  PDF inclusion: found PDF version <2.0>, but at most version <1.7> allowed
-<picture/design_figures/sequence_register.pdf, id=317, 1006.83151pt x 756.43602
+<picture/design_figures/sequence_register.pdf, id=359, 1006.83151pt x 756.43602
 pt>
 File: picture/design_figures/sequence_register.pdf Graphic file (type pdf)
 <use picture/design_figures/sequence_register.pdf>
 Package pdftex.def Info: picture/design_figures/sequence_register.pdf  used on 
 input line 110.
 (pdftex.def)             Requested size: 469.47768pt x 352.7202pt.
-[17] [18 <./picture/design_figures/sequence_register.pdf>]
+[18] [19 <./picture/design_figures/sequence_register.pdf>]
 
 pdfTeX warning: pdflatex (file ./picture/design_figures/sequence_recovery.pdf):
  PDF inclusion: found PDF version <2.0>, but at most version <1.7> allowed
-<picture/design_figures/sequence_recovery.pdf, id=376, 691.87482pt x 695.96008p
+<picture/design_figures/sequence_recovery.pdf, id=418, 691.87482pt x 695.96008p
 t>
 File: picture/design_figures/sequence_recovery.pdf Graphic file (type pdf)
 <use picture/design_figures/sequence_recovery.pdf>
 Package pdftex.def Info: picture/design_figures/sequence_recovery.pdf  used on 
 input line 132.
 (pdftex.def)             Requested size: 469.48683pt x 472.25897pt.
-[19 <./picture/design_figures/sequence_recovery.pdf>]
+[20 <./picture/design_figures/sequence_recovery.pdf>]
 
 pdfTeX warning: pdflatex (file ./picture/design_figures/architecture.pdf): PDF 
 inclusion: found PDF version <2.0>, but at most version <1.7> allowed
-<picture/design_figures/architecture.pdf, id=417, 1094.0875pt x 1089.09889pt>
+<picture/design_figures/architecture.pdf, id=459, 1094.0875pt x 1089.09889pt>
 File: picture/design_figures/architecture.pdf Graphic file (type pdf)
 <use picture/design_figures/architecture.pdf>
 Package pdftex.def Info: picture/design_figures/architecture.pdf  used on input
  line 145.
 (pdftex.def)             Requested size: 469.47049pt x 467.32292pt.
-[20 <./picture/design_figures/architecture.pdf>] [21]
+[21 <./picture/design_figures/architecture.pdf>] [22]
 
 pdfTeX warning: pdflatex (file ./picture/design_figures/data_model.pdf): PDF in
 clusion: found PDF version <2.0>, but at most version <1.7> allowed
-<picture/design_figures/data_model.pdf, id=440, 650.43pt x 888.31876pt>
+<picture/design_figures/data_model.pdf, id=492, 650.43pt x 888.31876pt>
 File: picture/design_figures/data_model.pdf Graphic file (type pdf)
 <use picture/design_figures/data_model.pdf>
 Package pdftex.def Info: picture/design_figures/data_model.pdf  used on input l
 ine 183.
 (pdftex.def)             Requested size: 441.3034pt x 602.72041pt.
-[22] [23 <./picture/design_figures/data_model.pdf>] [24]
-<picture/design_figures/board_pipeline.pdf, id=557, 895.345pt x 178.6675pt>
+[23] [24 <./picture/design_figures/data_model.pdf>] [25]
+<picture/design_figures/board_pipeline.pdf, id=607, 895.345pt x 178.6675pt>
 File: picture/design_figures/board_pipeline.pdf Graphic file (type pdf)
 <use picture/design_figures/board_pipeline.pdf>
 Package pdftex.def Info: picture/design_figures/board_pipeline.pdf  used on inp
 ut line 224.
 (pdftex.def)             Requested size: 431.91199pt x 86.19016pt.
- [25 <./picture/design_figures/board_pipeline.pdf>]
-<picture/design_figures/state_machine.pdf, id=579, 850.17625pt x 394.47375pt>
+ [26 <./picture/design_figures/board_pipeline.pdf>]
+<picture/design_figures/state_machine.pdf, id=631, 850.17625pt x 394.47375pt>
 File: picture/design_figures/state_machine.pdf Graphic file (type pdf)
 <use picture/design_figures/state_machine.pdf>
 Package pdftex.def Info: picture/design_figures/state_machine.pdf  used on inpu
 t line 274.
 (pdftex.def)             Requested size: 431.91199pt x 200.40247pt.
- [26] [27 <./picture/design_figures/state_machine.pdf>]
-<picture/design_figures/move_decision.pdf, id=604, 476.78125pt x 544.0325pt>
+ [27] [28 <./picture/design_figures/state_machine.pdf>]
+<picture/design_figures/move_decision.pdf, id=657, 476.78125pt x 544.0325pt>
 File: picture/design_figures/move_decision.pdf Graphic file (type pdf)
 <use picture/design_figures/move_decision.pdf>
 Package pdftex.def Info: picture/design_figures/move_decision.pdf  used on inpu
 t line 318.
 (pdftex.def)             Requested size: 441.3034pt x 503.57915pt.
- [28] [29 <./picture/design_figures/move_decision.pdf>] [30] [31]
-<picture/design_figures/full_cycle.pdf, id=648, 867.24pt x 1452.42625pt>
+ [29] [30 <./picture/design_figures/move_decision.pdf>] [31] [32]
+<picture/design_figures/full_cycle.pdf, id=699, 867.24pt x 1452.42625pt>
 File: picture/design_figures/full_cycle.pdf Graphic file (type pdf)
 <use picture/design_figures/full_cycle.pdf>
 Package pdftex.def Info: picture/design_figures/full_cycle.pdf  used on input l
 ine 403.
 (pdftex.def)             Requested size: 331.28815pt x 554.83096pt.
- [32]
-[33 <./picture/design_figures/full_cycle.pdf>] [34] [35] [36] [37])
-(./sections/sec_development.tex [38]) (./sections/final.tex [39
+ [33]
+[34 <./picture/design_figures/full_cycle.pdf>] [35] [36] [37] [38])
+(./sections/sec_development.tex [39]
+Underfull \hbox (badness 10000) in paragraph at lines 11--12
+[]\T2A/cmr/bx/n/14.4 (+20) Фреймворки глу-бо-ко-го обу-че-ния и ин-фе-рен-са
+ []
 
-])
-(./references.tex [40
 
-] (./cource_report.bbl))
+Underfull \hbox (badness 1087) in paragraph at lines 11--12
+\T2A/cmr/m/n/14.4 (+20) CPU-инференс пе-ре-ве-дјн в фор-мат ONNX. В ги-брид-ном
+ кон-вей-е-ре
+ []
+
+
+Underfull \hbox (badness 2990) in paragraph at lines 11--12
+\T2A/cmtt/m/n/14.4 DINOv2-Small INT8 \T2A/cmr/m/n/14.4 (+20) [[]] для ин-ва-ри-
+ант-но-го к осве-ще-нию срав-не-ния
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 13--14
+[]\T2A/cmr/bx/n/14.4 (+20) Комплекс от-сле-жи-ва-ния рук (MediaPipe Hand
+ []
+
+
+Underfull \hbox (badness 1931) in paragraph at lines 13--14
+\T2A/cmr/bx/n/14.4 (+20) Landmarker [[]])\T2A/cmr/m/n/14.4 (+20) . Обес-пе-чи-в
+а-ет про-стран-ствен-ную 21-точечную де-
+ []
+
+
+Underfull \hbox (badness 6910) in paragraph at lines 13--14
+\T2A/cmr/m/n/14.4 (+20) силуэтный де-тек-тор \T2A/cmtt/m/n/14.4 ColorSilhouette
+HandDetector \T2A/cmr/m/n/14.4 (+20) в про-стран-стве
+ []
+
+[40
+
+]
+Underfull \hbox (badness 7030) in paragraph at lines 16--17
+[]\T2A/cmr/bx/n/14.4 (+20) Веб-стекинг и кон-тей-не-ри-за-ция (FastAPI, Uvicorn
+,
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 59--60
+[]\T2A/cmtt/m/n/14.4 src/vision/ \T2A/cmr/m/n/14.4 (+20) --- за-хват ви-део (\T
+2A/cmtt/m/n/14.4 VideoAdapter\T2A/cmr/m/n/14.4 (+20) ), ло-ка-ли-за-
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 59--60
+\T2A/cmr/m/n/14.4 (+20) ция и тре-кинг уг-лов дос-ки (\T2A/cmtt/m/n/14.4 BoardL
+ocalizer\T2A/cmr/m/n/14.4 (+20) , \T2A/cmtt/m/n/14.4 CornerRefiner\T2A/cmr/m/n/
+14.4 (+20) ,
+ []
+
+
+Underfull \hbox (badness 2903) in paragraph at lines 59--60
+\T2A/cmtt/m/n/14.4 BoardGeometryTracker\T2A/cmr/m/n/14.4 (+20) ), го-мо-гра-фия
+, тре-кинг за-ня-то-сти зо-ны ос-но-
+ []
+
+
+Underfull \hbox (badness 1077) in paragraph at lines 61--62
+[]\T2A/cmtt/m/n/14.4 src/reasoning/ \T2A/cmr/m/n/14.4 (+20) --- ко-неч-ный ав-т
+о-мат \T2A/cmtt/m/n/14.4 GameFSM\T2A/cmr/m/n/14.4 (+20) , ге-не-ра-тор ле-
+ []
+
+[41] [42]
+Underfull \hbox (badness 10000) in paragraph at lines 64--65
+\T2A/cmtt/m/n/14.4 WebSocketManager\T2A/cmr/m/n/14.4 (+20) , ви-део-сер-ви-сы з
+а-пи-си и офлайн-анализа,
+ []
+
+
+Underfull \hbox (badness 10000) in paragraph at lines 64--65
+\T2A/cmr/m/n/14.4 (+20) SPA-интерфейс), овер-лей \T2A/cmtt/m/n/14.4 VisualHUDCo
+mposer\T2A/cmr/m/n/14.4 (+20) , де-ск-топ-ный
+ []
+
+
+Overfull \hbox (23.57437pt too wide) in paragraph at lines 79--79
+[]|\T2A/cmtt/m/n/14.4 src.core.datatypes|  
+ []
+
+
+Overfull \hbox (1.64928pt too wide) in paragraph at lines 81--81
+[]|\T2A/cmtt/m/n/14.4 src.core.config|  
+ []
+
+
+Overfull \hbox (19.92018pt too wide) in paragraph at lines 83--83
+[]|\T2A/cmtt/m/n/14.4 src.vision.board_- 
+ []
+
+
+Overfull \hbox (28.53969pt too wide) in paragraph at lines 83--83
+[]|\T2A/cmtt/m/n/14.4 CoarseToFineLocalizer\T2A/cmr/m/n/14.4 (-20) , 
+ []
+
+
+Overfull \hbox (19.40826pt too wide) in paragraph at lines 83--83
+\T2A/cmtt/m/n/14.4 BoardGeometryTracker|  
+ []
+
+
+Overfull \hbox (45.49947pt too wide) in paragraph at lines 85--85
+[]|\T2A/cmtt/m/n/14.4 src.vision.homography|  
+ []
+
+
+Overfull \hbox (12.0999pt too wide) in paragraph at lines 85--85
+[]|\T2A/cmtt/m/n/14.4 GeometryTransformer|  
+ []
+
+
+Overfull \hbox (49.15364pt too wide) in paragraph at lines 87--87
+[]|\T2A/cmtt/m/n/14.4 src.vision.occupancy_- 
+ []
+
+
+Overfull \hbox (26.71663pt too wide) in paragraph at lines 87--87
+[]|\T2A/cmtt/m/n/14.4 BoardOccupancyTracker|  
+ []
+
+
+Overfull \hbox (27.22855pt too wide) in paragraph at lines 89--89
+[]|\T2A/cmtt/m/n/14.4 src.vision.motion_- 
+ []
+
+
+Overfull \hbox (70.56682pt too wide) in paragraph at lines 89--89
+\T2A/cmtt/m/n/14.4 ColorSilhouetteHandDetector|  
+ []
+
+
+Overfull \hbox (13.92296pt too wide) in paragraph at lines 91--91
+[]|\T2A/cmtt/m/n/14.4 ONNXPieceClassifier\T2A/cmr/m/n/14.4 (-20) , 
+ []
+
+
+Overfull \hbox (64.7161pt too wide) in paragraph at lines 91--91
+\T2A/cmtt/m/n/14.4 WholeBoardChessQClassifier\T2A/cmr/m/n/14.4 (-20) , 
+ []
+
+
+Overfull \hbox (55.95009pt too wide) in paragraph at lines 91--91
+\T2A/cmtt/m/n/14.4 DINOv2PatchChangeDetector|  
+ []
+
+
+Overfull \hbox (16.266pt too wide) in paragraph at lines 93--93
+[]|\T2A/cmtt/m/n/14.4 src.reasoning.fsm|  
+ []
+
+
+Overfull \hbox (1.64928pt too wide) in paragraph at lines 95--95
+[]|\T2A/cmtt/m/n/14.4 src.reasoning.*|  
+ []
+
+
+Overfull \hbox (72.38988pt too wide) in paragraph at lines 95--95
+[]|\T2A/cmtt/m/n/14.4 LegalMoveCandidateGenerator\T2A/cmr/m/n/14.4 (-20) , 
+ []
+
+
+Overfull \hbox (16.266pt too wide) in paragraph at lines 97--97
+[]|\T2A/cmtt/m/n/14.4 src.persistence.*|  
+ []
+
+
+Overfull \hbox (21.23132pt too wide) in paragraph at lines 97--97
+[]|\T2A/cmtt/m/n/14.4 JSONLEventRepository\T2A/cmr/m/n/14.4 (-20) , 
+ []
+
+
+Overfull \hbox (6.24918pt too wide) in paragraph at lines 99--99
+\T2A/cmtt/m/n/14.4 AsyncEngineService\T2A/cmr/m/n/14.4 (-20) , 
+ []
+
+
+Overfull \hbox (8.95764pt too wide) in paragraph at lines 101--101
+[]|\T2A/cmtt/m/n/14.4 src.orchestrator|  
+ []
+
+
+Overfull \hbox (4.79153pt too wide) in paragraph at lines 101--101
+[]|\T2A/cmtt/m/n/14.4 SystemOrchestrator|  
+ []
+
+
+Overfull \hbox (6.6146pt too wide) in paragraph at lines 103--103
+\T2A/cmtt/m/n/14.4 MJPEGVideoStreamer\T2A/cmr/m/n/14.4 (-20) , 
+ []
+
+
+Overfull \hbox (55.58467pt too wide) in paragraph at lines 103--103
+\T2A/cmtt/m/n/14.4 VideoTranscriptionManager|  
+ []
+
+
+Overfull \hbox (18.08907pt too wide) in paragraph at lines 105--105
+[]|\T2A/cmtt/m/n/14.4 src.ui.visualizer\T2A/cmr/m/n/14.4 (-20) , 
+ []
+
+
+Overfull \hbox (21.23132pt too wide) in paragraph at lines 105--105
+\T2A/cmtt/m/n/14.4 InteractiveDashboard\T2A/cmr/m/n/14.4 (-20) , 
+ []
+
+
+ignored: Infinite glue shrinkage found in box being split [43]
+ignored: Infinite glue shrinkage fo
+und in box being split [44]
+Underfull \hbox (badness 6412) in paragraph at lines 120--121
+[]\T2A/cmr/bx/n/14.4 (+20) Командная па-нель\T2A/cmr/m/n/14.4 (+20) : се-лек-то
+р ис-точ-ни-ка ви-део (ка-ме-ры
+ []
+
+[45] [46] [47]
+Overfull \hbox (49.87233pt too wide) in paragraph at lines 188--189
+[]|\T2A/cmr/m/n/14.4 (-20) Отказоустойчивость 
+ []
+
+
+Overfull \hbox (29.36884pt too wide) in paragraph at lines 190--191
+[]|\T2A/cmr/m/n/14.4 (-20) Интеграционный 
+ []
+
+
+Overfull \hbox (12.4486pt too wide) in paragraph at lines 176--197
+ [][] 
+ []
+
+
+LaTeX Warning: Float too large for page by 132.68094pt on input line 197.
+
+[48] [49] [50]
+Underfull \hbox (badness 1062) in paragraph at lines 244--245
+[]\T2A/cmr/m/n/14.4 (+20) на хо-де \T2A/cmtt/m/n/14.4 4. Qxf7# \T2A/cmr/m/n/14.
+4 (+20) яд-ро \T2A/cmtt/m/n/14.4 python-chess \T2A/cmr/m/n/14.4 (+20) за-фик-си
+-ро-ва-ло мат, а
+ []
+
+[51] [52]) (./sections/final.tex [53]
+Underfull \hbox (badness 2269) in paragraph at lines 8--9
+\T2A/cmr/m/n/14.4 (+20) ре-ги-стра-ции шах-мат-ной иг-ры, фор-ма-ли-зо-ва-ны су
+щ-но-сти и меж-мо-
+ []
+
+
+Underfull \hbox (badness 3746) in paragraph at lines 9--10
+[]\T2A/cmr/m/n/14.4 (+20) Спроектирован и ре-а-ли-зо-ван по-ме-хо-устой-чи-вый 
+ги-брид-ный
+ []
+
+
+Underfull \hbox (badness 2269) in paragraph at lines 9--10
+\T2A/cmr/m/n/14.4 (+20) кон-вей-ер ком-пью-тер-но-го зре-ния: двух-ста-дий-ная 
+ло-ка-ли-за-ция дос-ки
+ []
+
+[54
+
+]) (./references.tex [55] (./cource_report.bbl [56
+
+]))
 
 Package caption Warning: Unused \captionsetup[listing] on input line 167.
 See the caption package documentation for explanation.
 
-[41
-
-]
-runsystem(latexminted cleantemp  --timestamp 20261114153523 2F9CE3A14CB641EF1B6
+[57]
+runsystem(latexminted cleantemp  --timestamp 20261128135631 2F9CE3A14CB641EF1B6
 5629A76BBB30D)...executed safely (allowed).
 
  
@@ -1590,32 +1842,33 @@ L3 programming layer <2026-01-19>
 LaTeX Font Warning: Some font shapes were not available, defaults substituted.
 
 Package rerunfilecheck Info: File `cource_report.out' has not changed.
-(rerunfilecheck)             Checksum: 864D106F0A3F09BF381599F76A254BA6;9701.
+(rerunfilecheck)             Checksum: 0C987E9E57CABB62B67C982702E2E588;9802.
  ) 
 Here is how much of TeX's memory you used:
- 28970 strings out of 468980
- 576933 string characters out of 5462460
- 1127070 words of memory out of 5000000
- 56862 multiletter control sequences out of 15000+600000
- 646830 words of font info for 160 fonts, out of 8000000 for 9000
+ 29112 strings out of 468980
+ 578822 string characters out of 5462460
+ 1133334 words of memory out of 5000000
+ 56907 multiletter control sequences out of 15000+600000
+ 647891 words of font info for 174 fonts, out of 8000000 for 9000
  430 hyphenation exceptions out of 8191
- 80i,12n,82p,1595b,1369s stack positions out of 10000i,1000n,20000p,200000b,200000s
+ 80i,12n,82p,1625b,1328s stack positions out of 10000i,1000n,20000p,200000b,200000s
 </usr/share/texmf-dist/fonts/type1/public/amsfonts/cm/cmex10.pfb></usr/share/
 texmf-dist/fonts/type1/public/amsfonts/cm/cmmi10.pfb></usr/share/texmf-dist/fon
 ts/type1/public/amsfonts/cm/cmmi12.pfb></usr/share/texmf-dist/fonts/type1/publi
 c/amsfonts/cm/cmmi7.pfb></usr/share/texmf-dist/fonts/type1/public/amsfonts/cm/c
 mr10.pfb></usr/share/texmf-dist/fonts/type1/public/amsfonts/cm/cmr12.pfb></usr/
 share/texmf-dist/fonts/type1/public/amsfonts/cm/cmsy10.pfb></usr/share/texmf-di
-st/fonts/type1/public/cm-super/sfbx1440.pfb></usr/share/texmf-dist/fonts/type1/
-public/cm-super/sfbx1728.pfb></usr/share/texmf-dist/fonts/type1/public/cm-super
-/sfrm1000.pfb></usr/share/texmf-dist/fonts/type1/public/cm-super/sfrm1200.pfb><
-/usr/share/texmf-dist/fonts/type1/public/cm-super/sfrm1440.pfb></usr/share/texm
-f-dist/fonts/type1/public/cm-super/sfti1440.pfb></usr/share/texmf-dist/fonts/ty
-pe1/public/cm-super/sftt1440.pfb>
-Output written on cource_report.pdf (42 pages, 453416 bytes).
+st/fonts/type1/public/amsfonts/symbols/msbm10.pfb></usr/share/texmf-dist/fonts/
+type1/public/cm-super/sfbx1440.pfb></usr/share/texmf-dist/fonts/type1/public/cm
+-super/sfbx1728.pfb></usr/share/texmf-dist/fonts/type1/public/cm-super/sfrm1000
+.pfb></usr/share/texmf-dist/fonts/type1/public/cm-super/sfrm1200.pfb></usr/shar
+e/texmf-dist/fonts/type1/public/cm-super/sfrm1440.pfb></usr/share/texmf-dist/fo
+nts/type1/public/cm-super/sfti1440.pfb></usr/share/texmf-dist/fonts/type1/publi
+c/cm-super/sftt1440.pfb>
+Output written on cource_report.pdf (58 pages, 529582 bytes).
 PDF statistics:
- 821 PDF objects out of 1000 (max. 8388607)
- 711 compressed objects within 8 object streams
- 149 named destinations out of 1000 (max. 500000)
+ 1039 PDF objects out of 1200 (max. 8388607)
+ 909 compressed objects within 10 object streams
+ 218 named destinations out of 1000 (max. 500000)
  33534 words of extra memory for PDF output out of 35830 (max. 10000000)
 

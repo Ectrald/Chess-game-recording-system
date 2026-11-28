@@ -103,8 +103,10 @@ class MoveScorer:
                 geom_prod *= max(1e-3, p)
             geom_mean = geom_prod ** (1.0 / len(affected_probs))
             s_affected = 0.20 * arith_mean + 0.80 * geom_mean
+            min_aff = min(affected_probs)
         else:
             s_affected = 0.5
+            min_aff = 0.5
 
         # 2. Global consistency across non-affected squares S_global
         global_probs: List[float] = []
@@ -143,6 +145,10 @@ class MoveScorer:
             coverage_factor = 1.0
 
         s_v = base_s_v * coverage_factor
+        # Hard conservation cap: if any affected square directly contradicts the move (e.g. target stays empty),
+        # prevent global background agreement from inflating total score above acceptance threshold.
+        if min_aff < 0.15:
+            s_v = min(s_v, max(0.05, 1.8 * min_aff))
         return max(0.0, min(1.0, s_v))
 
     def _compute_temporal_score(

@@ -58,8 +58,27 @@ def ensure_model_weights(config: AppConfig) -> None:
                 from scripts.download_model import download_file, MODEL_REGISTRY
                 if "yolo_board" in MODEL_REGISTRY:
                     download_file(MODEL_REGISTRY["yolo_board"]["url"], yolo_p)
+
+        # 3. MediaPipe HandLandmarker task bundle
+        if config.vision and config.vision.hand_detector and config.vision.hand_detector.enabled:
+            hand_p = Path("data/weights/hand_landmarker.task")
+            if not hand_p.is_file() or hand_p.stat().st_size <= 1024:
+                from scripts.download_model import download_file, MODEL_REGISTRY
+                if "hand_landmarker" in MODEL_REGISTRY:
+                    download_file(MODEL_REGISTRY["hand_landmarker"]["url"], hand_p)
     except Exception as exc:
         logger.warning("Auto-preparation of model weights encountered non-fatal error: %s", exc)
+
+
+def _infer_cli_source_type(src: str) -> str:
+    """Infers CameraConfig.source_type from CLI --source argument."""
+    if src.endswith(".pgn"):
+        return "synthetic"
+    if src.isdigit() or src.startswith("/dev/video"):
+        return "device"
+    if src.startswith("rtsp://") or src.startswith("http://") or src.startswith("https://"):
+        return "rtsp"
+    return "file"
 
 
 def cmd_record(args: argparse.Namespace) -> int:
@@ -69,14 +88,7 @@ def cmd_record(args: argparse.Namespace) -> int:
 
     # Determine camera source type
     src = str(args.source)
-    if src.endswith(".pgn"):
-        src_type = "synthetic"
-    elif src.isdigit():
-        src_type = "device"
-    elif src.startswith("rtsp://") or src.startswith("http://"):
-        src_type = "rtsp"
-    else:
-        src_type = "file"
+    src_type = _infer_cli_source_type(src)
 
     config.camera.source_path = src
     config.camera.source_type = src_type
@@ -88,6 +100,10 @@ def cmd_record(args: argparse.Namespace) -> int:
     logger.info("Initializing recording session: source=%s (type=%s)", src, src_type)
     video_adapter = create_video_adapter(config.camera)
     orchestrator = SystemOrchestrator(config=config, session_id=args.session_id)
+    if args.white:
+        orchestrator.white_player = args.white
+    if args.black:
+        orchestrator.black_player = args.black
     dashboard = InteractiveDashboard(orchestrator=orchestrator, headless=is_headless)
 
     try:
@@ -141,12 +157,12 @@ def cmd_replay(args: argparse.Namespace) -> int:
         return 1
 
     repo = JSONLEventRepository(session_dir=journal_path.parent, filename=journal_path.name)
-    events = repo.read_all_events()
+    events = repo.read_active_moves()
     if not events:
-        print(f"Journal {journal_path} is empty.")
+        print(f"Journal {journal_path} has no active moves.")
         return 0
 
-    print(f"Replaying {len(events)} events from: {journal_path}\n")
+    print(f"Replaying {len(events)} active moves from: {journal_path}\n")
     board = chess.Board(events[0].fen_before)
 
     for ev in events:
@@ -171,9 +187,11 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
 
     print(f"Starting System Benchmark against: {ref_pgn}")
     config: AppConfig = load_config(args.config)
+    ensure_model_weights(config)
     config.camera.source_type = "synthetic"
     config.camera.source_path = str(ref_pgn)
-    config.camera.fps = args.fps
+    if args.fps and args.fps > 0:
+        config.camera.fps = args.fps
     config.ui.headless = True
 
     # Parse reference final FEN
@@ -189,18 +207,30 @@ def cmd_benchmark(args: argparse.Namespace) -> int:
     orchestrator = SystemOrchestrator(config=config, session_id="benchmark_run")
     dashboard = InteractiveDashboard(orchestrator=orchestrator, headless=True)
 
+    frames_processed = 0
+
+    def _on_frame(_state) -> None:
+        nonlocal frames_processed
+        frames_processed += 1
+
     t0 = time.perf_counter()
-    manifest = dashboard.run_loop(video_adapter=video_adapter, max_frames=args.max_frames)
+    try:
+        manifest = dashboard.run_loop(
+            video_adapter=video_adapter,
+            max_frames=args.max_frames,
+            on_frame_processed=_on_frame,
+        )
+    finally:
+        video_adapter.release()
     elapsed = time.perf_counter() - t0
-    video_adapter.release()
 
     fen_matched = (manifest.current_fen == expected_fen)
-    avg_fps = video_adapter.get_frame_count() / elapsed if elapsed > 0 else 0.0
+    avg_fps = frames_processed / elapsed if elapsed > 0 else 0.0
 
     print("\n" + "=" * 60)
     print("BENCHMARK REPORT")
     print(f"Total Time:      {elapsed:.3f} s")
-    print(f"Throughput:      {avg_fps:.1f} FPS")
+    print(f"Throughput:      {avg_fps:.1f} FPS ({frames_processed} frames)")
     print(f"Total Plies:     {manifest.total_plies}")
     print(f"Expected FEN:    {expected_fen}")
     print(f"Actual FEN:      {manifest.current_fen}")
@@ -220,14 +250,7 @@ def cmd_web(args: argparse.Namespace) -> int:
 
     # Determine camera source type
     src = str(args.source)
-    if src.endswith(".pgn"):
-        src_type = "synthetic"
-    elif src.isdigit():
-        src_type = "device"
-    elif src.startswith("rtsp://") or src.startswith("http://"):
-        src_type = "rtsp"
-    else:
-        src_type = "file"
+    src_type = _infer_cli_source_type(src)
 
     config.camera.source_path = src
     config.camera.source_type = src_type
@@ -238,7 +261,15 @@ def cmd_web(args: argparse.Namespace) -> int:
     port = args.port or config.web_ui.port
 
     logger.info("Initializing Web UI recording session: source=%s (type=%s) on http://%s:%d", src, src_type, host, port)
-    video_adapter = create_video_adapter(config.camera)
+    try:
+        video_adapter = create_video_adapter(config.camera)
+    except Exception as exc:
+        logger.warning(
+            "Initial video source '%s' unavailable (%s); starting Web UI without active live feed.",
+            src,
+            exc,
+        )
+        video_adapter = None
     orchestrator = SystemOrchestrator(config=config, session_id=args.session_id)
     if args.white:
         orchestrator.white_player = args.white
@@ -298,8 +329,8 @@ def build_parser() -> argparse.ArgumentParser:
     # Subcommand: web
     p_web = subparsers.add_parser("web", help="Launch web-based browser operator dashboard")
     p_web.add_argument("--source", "-s", default="0", help="Camera device index, video file, or PGN")
-    p_web.add_argument("--host", default="0.0.0.0", help="Host address to bind server (default 0.0.0.0)")
-    p_web.add_argument("--port", "-p", type=int, default=8000, help="Port to bind server (default 8000)")
+    p_web.add_argument("--host", default=None, help="Host address to bind server (overrides YAML)")
+    p_web.add_argument("--port", "-p", type=int, default=None, help="Port to bind server (overrides YAML)")
     p_web.add_argument("--config", "-c", default=None, help="Path to YAML configuration file")
     p_web.add_argument("--out-dir", "-o", default=None, help="Sessions root directory")
     p_web.add_argument("--session-id", default=None, help="Custom session identifier string")

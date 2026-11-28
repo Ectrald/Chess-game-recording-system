@@ -16,7 +16,7 @@ import logging
 from pathlib import Path
 import threading
 import time
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Set, Tuple
 import uuid
 
 import chess
@@ -222,6 +222,7 @@ class SystemOrchestrator:
         self._latest_eval: Optional[AnalysisResult] = None
         self._illegal_attempts_count: int = 0
         self._last_logged_illegal_key: Optional[str] = None
+        self._stale_event_ids: Set[str] = set()
 
         # Frame Rate Telemetry
         self._last_frame_time: Optional[float] = None
@@ -338,7 +339,11 @@ class SystemOrchestrator:
 
     def _on_engine_analysis_completed(self, result: AnalysisResult) -> None:
         """Invoked asynchronously when Stockfish finishes move evaluation."""
-        self._latest_eval = result
+        with self._lock:
+            if result.event_id in self._stale_event_ids:
+                logger.debug("Ignored stale engine evaluation for event %s", result.event_id)
+                return
+            self._latest_eval = result
         logger.debug(
             "Orchestrator: Engine evaluated ply=%d (%s) quality=%s",
             result.ply,
@@ -429,7 +434,7 @@ class SystemOrchestrator:
                 and not self._last_hand_detection.is_hand_present
                 and self.motion_detector.smoothed_motion_score < (self.config.temporal.motion_diff_threshold * 1.2)
                 and self._board_geometry.inverse_homography is not None
-                and self._board_geometry.detection_method not in ("manual", "aruco")
+                and self._board_geometry.detection_method not in ("manual", "aruco", "synthetic")
                 and (self._frame_counter % max(1, self.config.temporal.drift_check_interval_frames) == 0)
             ):
                 new_geom, drift_status = self.geometry_tracker.check_drift(
@@ -457,6 +462,11 @@ class SystemOrchestrator:
                     self._orientation_calibrated = False
                     self._last_cell_obs = None
                     self._last_stable_raw_obs = None
+                    self._stable_warped_board = None
+                    self._stable_warped_history.clear()
+                    self._last_warped_board = None
+                    self._pre_commit_warped_board = None
+                    self.dino_change_detector.reset()
                     self.geometry_tracker.reset()
                     logger.warning("Board geometry lost during drift tracking; requesting relocalization.")
 
@@ -903,7 +913,10 @@ class SystemOrchestrator:
             or not self._last_committed_move_squares
         ):
             return False
-        if self._pre_commit_warped_board.shape != warped_after.shape:
+        if (
+            self._pre_commit_warped_board.shape != warped_after.shape
+            or self._stable_warped_board.shape != warped_after.shape
+        ):
             return False
 
         deltas_pre, _, _ = self._compute_base_core_deltas(warped_after, self._pre_commit_warped_board)
@@ -950,10 +963,11 @@ class SystemOrchestrator:
                 sq: 1.0 - float(obs.probabilities.get("empty", 1.0))
                 for sq, obs in cell_obs.items()
             }
-            if self._last_cell_obs:
+            prev_raw_obs = self._last_stable_raw_obs or self._last_cell_obs
+            if prev_raw_obs:
                 nn_occ_before = {
                     sq: 1.0 - float(obs.probabilities.get("empty", 1.0))
-                    for sq, obs in self._last_cell_obs.items()
+                    for sq, obs in prev_raw_obs.items()
                 }
         evidence = self.occupancy_tracker.evaluate_transition(
             board=board,
@@ -1082,6 +1096,7 @@ class SystemOrchestrator:
         warped_before: np.ndarray,
     ) -> Dict[str, Any]:
         """Combines ChessQ-Lite raw [64, 13] posteriors with DINOv2 + SSIM/VecGrad non-brightness deltas."""
+        self._pending_physical_anomaly = None
         board = self.state_manager.current_board
         occ_thr = self.config.piece_classifier.occupancy_threshold
 
@@ -1306,14 +1321,62 @@ class SystemOrchestrator:
                         " -> ".join(m.uci() for m in top_path),
                     )
 
-        # Anomaly guard: strong localized physical change with zero plausible legal explanation
+        # Legal-move consistency verification & anomaly guard:
+        # 1) If whole-board transition changed squares yet NO legal 1..5-ply move explains them
+        #    (e.g., knight/king teleported across the board, piece swapped illegally), escalate as illegal anomaly
+        #    with empty candidate list instead of inventing unrelated "closest" legal moves.
+        if (
+            self._pending_two_ply_second_move is None
+            and active_changed
+        ):
+            def _expected_match_prob(obs_cell: Any, exp_c: str) -> float:
+                p_exact = float(obs_cell.probabilities.get(exp_c, 0.0))
+                if exp_c == "empty":
+                    return p_exact
+                pref = exp_c[0]
+                p_color = sum(float(v) for k, v in obs_cell.probabilities.items() if k.startswith(pref))
+                return max(p_exact, 0.85 * p_color)
+
+            best_1ply_ok = False
+            for m1 in board.legal_moves:
+                aff1 = set(self.candidate_generator.get_affected_squares(board, m1))
+                if not active_changed.intersection(aff1):
+                    continue
+                unexplained = [
+                    sq for sq in active_changed
+                    if sq not in aff1 and refined[sq].confidence >= 0.78 and changed_vis[sq]
+                ]
+                if unexplained:
+                    continue
+                b_tmp = board.copy()
+                b_tmp.push(m1)
+                aff_scores = [
+                    _expected_match_prob(
+                        refined[sq],
+                        board_square_to_piece_class(b_tmp, chess.parse_square(sq)),
+                    )
+                    for sq in aff1
+                ]
+                if aff_scores and min(aff_scores) >= 0.28 and (sum(aff_scores) / len(aff_scores)) >= 0.48:
+                    best_1ply_ok = True
+                    break
+
+            if not best_1ply_ok:
+                anom_sqs = sorted(active_changed | {
+                    sq for sq in CHESS_SQUARES
+                    if (use_dino and dino_deltas[sq] >= max(0.16, dino_med * 3.80))
+                    or struct_deltas[sq] >= thresh_s * 1.40
+                })
+                self._pending_physical_anomaly = anom_sqs[:6]
+                return refined
+
+        # 2) Strong localized physical change without ChessQ flip
         strong_vis = [
             sq for sq in CHESS_SQUARES
             if (use_dino and dino_deltas[sq] >= max(0.16, dino_med * 3.80))
             or struct_deltas[sq] >= thresh_s * 1.40
         ]
         if strong_vis and not active_changed:
-            # Visual change detected without a matching ChessQ piece transition; flag strongest anomalies
             strong_vis.sort(key=lambda s: max(dino_deltas[s], struct_deltas[s]), reverse=True)
             best_overlap = 0
             for m in board.legal_moves:
@@ -1360,8 +1423,10 @@ class SystemOrchestrator:
         """Resets cached perception and recovery tracking buffers."""
         if not preserve_geometry:
             self._orientation_calibrated = False
+            self._last_confirmed_orientation = None
         self._last_cell_obs = None
         self._last_stable_raw_obs = None
+        self._last_observation = None
         self._stable_warped_board = None
         self._stable_warped_history.clear()
         self._pre_commit_warped_board = None
@@ -1375,6 +1440,7 @@ class SystemOrchestrator:
         self._last_decision = None
         self.occupancy_tracker.reset()
         self.geometry_tracker.reset()
+        self.dino_change_detector.reset()
         self.fsm.reset()
         self.motion_detector.reset()
         if self._is_paused:
@@ -1528,13 +1594,26 @@ class SystemOrchestrator:
 
             if target_hypo is not None:
                 try:
-                    self.state_manager.commit(target_hypo, self._last_observation)
-                    self.fsm.resume(
-                        has_geometry=(self._board_geometry is not None),
-                        orientation_ready=self._orientation_calibrated,
-                    )
+                    if self._last_observation is not None:
+                        self.state_manager.commit(target_hypo, self._last_observation)
+                    else:
+                        self.state_manager.manual_commit(target_hypo.move_uci, None)
+                    if self._is_paused:
+                        self.fsm.pause()
+                    else:
+                        self.fsm.resume(
+                            has_geometry=(self._board_geometry is not None),
+                            orientation_ready=self._orientation_calibrated,
+                        )
                     self._active_uncertainty = False
                     self._pending_physical_anomaly = None
+                    self._pending_two_ply_second_move = None
+                    self._pending_rapid_queue.clear()
+                    self._pending_two_ply_raw_obs = None
+                    self._last_cell_obs = None
+                    self._last_stable_raw_obs = None
+                    self._last_decision = None
+                    self.fsm._last_decision = None
                     self._stable_warped_history.clear()
                     if self._last_warped_board is not None:
                         self._stable_warped_board = self._last_warped_board.copy()
@@ -1547,12 +1626,22 @@ class SystemOrchestrator:
             if move_uci:
                 try:
                     self.state_manager.manual_commit(move_uci, self._last_observation)
-                    self.fsm.resume(
-                        has_geometry=(self._board_geometry is not None),
-                        orientation_ready=self._orientation_calibrated,
-                    )
+                    if self._is_paused:
+                        self.fsm.pause()
+                    else:
+                        self.fsm.resume(
+                            has_geometry=(self._board_geometry is not None),
+                            orientation_ready=self._orientation_calibrated,
+                        )
                     self._active_uncertainty = False
                     self._pending_physical_anomaly = None
+                    self._pending_two_ply_second_move = None
+                    self._pending_rapid_queue.clear()
+                    self._pending_two_ply_raw_obs = None
+                    self._last_cell_obs = None
+                    self._last_stable_raw_obs = None
+                    self._last_decision = None
+                    self.fsm._last_decision = None
                     self._stable_warped_history.clear()
                     if self._last_warped_board is not None:
                         self._stable_warped_board = self._last_warped_board.copy()
@@ -1573,6 +1662,7 @@ class SystemOrchestrator:
         with self._lock:
             popped = self.state_manager.rollback()
             if popped is not None:
+                self._stale_event_ids.add(popped.event_id)
                 try:
                     rb_event = MoveEvent(
                         event_type="rollback",
@@ -1588,13 +1678,24 @@ class SystemOrchestrator:
                     self.event_repo.append_event(rb_event)
                 except Exception as exc:
                     logger.warning("Failed to append rollback audit event: %s", exc)
-            self.fsm.resume(
-                has_geometry=(self._board_geometry is not None),
-                orientation_ready=self._orientation_calibrated,
-            )
+            if self._is_paused:
+                self.fsm.pause()
+            else:
+                self.fsm.resume(
+                    has_geometry=(self._board_geometry is not None),
+                    orientation_ready=self._orientation_calibrated,
+                )
             self._active_uncertainty = False
             self._pending_physical_anomaly = None
             self._last_logged_illegal_key = None
+            self._pre_commit_warped_board = None
+            self._last_committed_move_squares = []
+            self._pending_two_ply_second_move = None
+            self._pending_rapid_queue.clear()
+            self._pending_two_ply_raw_obs = None
+            self._last_decision = None
+            self.fsm._last_decision = None
+            self._latest_eval = None
 
             history = self.state_manager.history
             self._last_committed_event = history[-1] if history else None
@@ -1698,12 +1799,16 @@ class SystemOrchestrator:
     def reset_session(self) -> SessionManifest:
         """Resets current game back to initial chess starting position and clears its move journal."""
         with self._lock:
+            for ev in self.state_manager.history:
+                self._stale_event_ids.add(ev.event_id)
+            self.engine_service.clear_pending()
             self.state_manager.reset()
             self.event_repo.clear()
             self._latest_eval = None
             self._last_committed_event = None
             self._illegal_attempts_count = 0
             self._last_logged_illegal_key = None
+            self._last_confirmed_orientation = None
             keep_geom = self._board_geometry is not None
             self._reset_tracking_state(preserve_geometry=keep_geom)
             if keep_geom:
@@ -1721,6 +1826,9 @@ class SystemOrchestrator:
         """Saves current session snapshot and switches to a brand-new recording session."""
         with self._lock:
             self.save_session_snapshot(is_completed=True)
+            for ev in self.state_manager.history:
+                self._stale_event_ids.add(ev.event_id)
+            self.engine_service.clear_pending()
 
             ts_str = datetime.now().strftime("%Y%m%d_%H%M%S")
             self.session_id = session_id or f"session_{ts_str}_{uuid.uuid4().hex[:6]}"
@@ -1746,6 +1854,7 @@ class SystemOrchestrator:
             self._last_committed_event = None
             self._illegal_attempts_count = 0
             self._last_logged_illegal_key = None
+            self._last_confirmed_orientation = None
             if pause:
                 self._is_paused = True
 
@@ -1768,6 +1877,10 @@ class SystemOrchestrator:
 
             if session_id != self.session_id:
                 self.save_session_snapshot(is_completed=False)
+            for ev in self.state_manager.history:
+                self._stale_event_ids.add(ev.event_id)
+            self.engine_service.clear_pending()
+            self._last_confirmed_orientation = None
 
             rec = RecoveryManager(target_dir)
             recovered_mgr, events = rec.recover_session()

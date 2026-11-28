@@ -182,7 +182,7 @@ class OrientationResolver:
                 if self.allow_sideways and (bl_mean - br_mean) >= self.color_diff_threshold:
                     is_sideways = True
                 else:
-                    return BoardOrientation.UNKNOWN
+                    return self.fallback
 
         # Factor 3: Mass distribution analysis
         if self.mass_distribution_enabled:

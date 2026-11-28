@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import logging
+import math
 from pathlib import Path
 import threading
 import time
@@ -42,8 +43,18 @@ def discover_video_devices(
     seen_sources: set[str] = set()
 
     active_norm = str(active_source).strip() if active_source is not None else ""
+    if active_norm:
+        try:
+            resolved_name = Path(active_norm).resolve().name
+        except Exception:
+            resolved_name = active_norm
+    else:
+        resolved_name = ""
+
     if active_norm.startswith("/dev/video") and active_norm.replace("/dev/video", "").isdigit():
         active_idx: Optional[int] = int(active_norm.replace("/dev/video", ""))
+    elif resolved_name.startswith("video") and resolved_name.replace("video", "").isdigit():
+        active_idx = int(resolved_name.replace("video", ""))
     elif active_norm.isdigit():
         active_idx = int(active_norm)
     else:
@@ -196,7 +207,7 @@ class LiveVideoRecorder:
             target_dir.mkdir(parents=True, exist_ok=True)
             ts = datetime.now().strftime("%Y%m%d_%H%M%S")
             safe_sid = (session_id or "game").replace("/", "_")
-            fps_val = float(fps) if 1.0 <= fps <= 60.0 else 20.0
+            fps_val = float(fps) if (math.isfinite(fps) and 1.0 <= fps <= 60.0) else 20.0
             w = max(16, int(width))
             h = max(16, int(height))
 
@@ -205,12 +216,14 @@ class LiveVideoRecorder:
             chosen_path = mp4_path
             if not writer.isOpened():
                 writer.release()
+                mp4_path.unlink(missing_ok=True)
                 avi_path = target_dir / f"{safe_sid}_{ts}.avi"
                 writer = cv2.VideoWriter(str(avi_path), cv2.VideoWriter_fourcc(*"MJPG"), fps_val, (w, h))
                 chosen_path = avi_path
 
             if not writer.isOpened():
                 writer.release()
+                chosen_path.unlink(missing_ok=True)
                 raise RuntimeError("Failed to initialize OpenCV VideoWriter")
 
             self._writer = writer
@@ -226,14 +239,23 @@ class LiveVideoRecorder:
 
     def write_frame(self, image_bgr: np.ndarray) -> None:
         """Appends a raw BGR frame to the active video file."""
+        if image_bgr is None or not isinstance(image_bgr, np.ndarray) or image_bgr.size == 0:
+            return
         with self._lock:
             if self._writer is None or not self._writer.isOpened() or self._size is None:
                 return
-            h, w = image_bgr.shape[:2]
+            img = image_bgr
+            if img.dtype != np.uint8:
+                img = np.clip(img, 0, 255).astype(np.uint8)
+            if img.ndim == 2:
+                img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+            elif img.ndim == 3 and img.shape[2] == 4:
+                img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+            elif img.ndim != 3 or img.shape[2] != 3:
+                return
+            h, w = img.shape[:2]
             tw, th = self._size
-            frame_to_write = (
-                image_bgr if (w == tw and h == th) else cv2.resize(image_bgr, (tw, th))
-            )
+            frame_to_write = img if (w == tw and h == th) else cv2.resize(img, (tw, th))
             self._writer.write(frame_to_write)
             self._frame_count += 1
 
@@ -372,7 +394,7 @@ class VideoTranscriptionManager:
                 raise RuntimeError(f"Unable to open video file: {video_path}")
 
             video_fps = float(cap.get(cv2.CAP_PROP_FPS) or 30.0)
-            if video_fps <= 0:
+            if not math.isfinite(video_fps) or video_fps <= 0 or video_fps > 120.0:
                 video_fps = 30.0
             total_raw = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
             stride = max(1, int(round(video_fps / max(1.0, target_fps))))
@@ -385,6 +407,7 @@ class VideoTranscriptionManager:
 
             raw_idx = 0
             processed = 0
+            consecutive_failures = 0
             last_notify = 0.0
 
             while not self._cancel_event.is_set():
@@ -394,7 +417,18 @@ class VideoTranscriptionManager:
                 if raw_idx % stride == 0:
                     ret, img = cap.retrieve()
                     if not ret or img is None:
-                        break
+                        consecutive_failures += 1
+                        if consecutive_failures >= 5:
+                            break
+                        raw_idx += 1
+                        continue
+                    consecutive_failures = 0
+                    if cfg.camera.rotate == 90:
+                        img = cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE)
+                    elif cfg.camera.rotate == 180:
+                        img = cv2.rotate(img, cv2.ROTATE_180)
+                    elif cfg.camera.rotate == 270:
+                        img = cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
                     h, w = img.shape[:2]
                     frame = Frame(
                         frame_id=raw_idx,
@@ -424,14 +458,25 @@ class VideoTranscriptionManager:
                             on_update(self.get_status())
                 raw_idx += 1
 
+            if processed == 0 and not self._cancel_event.is_set():
+                raise RuntimeError("Video stream contained 0 decodable frames")
+
             manifest = orch.stop()
             moves_list = [m.move_san for m in orch.state_manager.history]
+            diag_err = None
+            if (
+                manifest.total_plies == 0
+                and not self._cancel_event.is_set()
+                and not orch._orientation_calibrated
+            ):
+                logger.warning("Transcription finished with 0 moves and uncalibrated board (%s)", video_path)
             with self._lock:
                 self._status["status"] = "cancelled" if self._cancel_event.is_set() else "completed"
                 self._status["progress_pct"] = 100.0 if not self._cancel_event.is_set() else self._status["progress_pct"]
                 self._status["frames_processed"] = processed
                 self._status["plies_found"] = manifest.total_plies
                 self._status["moves"] = moves_list
+                self._status["error"] = diag_err
 
             snap = self.get_status()
             if on_update:

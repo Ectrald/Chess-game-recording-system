@@ -147,6 +147,8 @@ class StockfishUCIWorker(BaseEngineWorker):
         self.config = config
         self._lock = threading.RLock()
         self._engine: Optional[chess.engine.SimpleEngine] = None
+        self._mock_fallback = MockStockfishEngine()
+        self._closed = False
         self._executable_path: Optional[str] = self._discover_executable()
 
         if self._executable_path:
@@ -155,7 +157,6 @@ class StockfishUCIWorker(BaseEngineWorker):
             logger.warning(
                 "Stockfish binary not located; delegating analysis to MockStockfishEngine fallback"
             )
-            self._mock_fallback = MockStockfishEngine()
 
     def _discover_executable(self) -> Optional[str]:
         """Locates Stockfish executable on the host system."""
@@ -208,7 +209,7 @@ class StockfishUCIWorker(BaseEngineWorker):
 
     def evaluate(self, board: chess.Board, depth: int = 15, timeout_sec: float = 2.5) -> EngineEvaluation:
         with self._lock:
-            if self._engine is None:
+            if self._closed or self._engine is None:
                 return self._mock_fallback.evaluate(board, depth, timeout_sec)
 
             start_t = time.time()
@@ -248,26 +249,34 @@ class StockfishUCIWorker(BaseEngineWorker):
                 )
             except (chess.engine.EngineTerminatedError, chess.engine.EngineError) as e:
                 logger.error("Stockfish engine crashed during analysis: %s. Restarting...", e)
-                self.restart()
-                # Use mock for this failed call
-                return MockStockfishEngine().evaluate(board, depth, timeout_sec)
+                if not self._closed:
+                    self.restart()
+                return self._mock_fallback.evaluate(board, depth, timeout_sec)
             except Exception as e:
                 logger.error("Unexpected error in Stockfish analysis: %s", e)
-                return MockStockfishEngine().evaluate(board, depth, timeout_sec)
+                if not self._closed:
+                    self.restart()
+                return self._mock_fallback.evaluate(board, depth, timeout_sec)
 
     def restart(self) -> None:
         with self._lock:
             self.close()
+            self._closed = False
             if self._executable_path:
                 self._start_engine()
 
     def close(self) -> None:
         with self._lock:
+            self._closed = True
             if self._engine is not None:
                 try:
                     self._engine.quit()
                 except Exception as e:
                     logger.debug("Error while quitting Stockfish: %s", e)
+                    try:
+                        self._engine.close()
+                    except Exception:
+                        pass
                 self._engine = None
 
 

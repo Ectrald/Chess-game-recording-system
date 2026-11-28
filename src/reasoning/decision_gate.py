@@ -107,6 +107,8 @@ class DecisionGate:
 
         # 3. Absolute score threshold check
         if top_hypo.total_score < self.config.min_acceptance_score:
+            # Suppress misleading unrelated candidates if top hypothesis fails even minimal visual consistency
+            surfaced_top = top_slice if top_hypo.score_visual >= 0.25 else []
             return DecisionResult(
                 status=DecisionStatus.UNCERTAIN,
                 rejection_reason=(
@@ -114,7 +116,7 @@ class DecisionGate:
                     f"minimum acceptance threshold {self.config.min_acceptance_score:.3f}"
                 ),
                 margin=margin,
-                top_hypotheses=top_slice,
+                top_hypotheses=surfaced_top,
                 uncertain_squares=top_hypo.changed_squares,
             )
 

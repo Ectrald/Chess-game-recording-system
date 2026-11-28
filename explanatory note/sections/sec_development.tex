@@ -1,371 +1,288 @@
 \section{Реализация, тестирование и демонстрация гибридной интеллектуальной системы}
 
-Разработка программного комплекса автономной видеорегистрации и анализа шахматных партий выполнена в строгом соответствии с архитектурными решениями, математическими моделями и онтологической структурой предметной области, описанными в разделе~2. Созданная система объединяет низкоуровневые алгоритмы компьютерного зрения, глубокие свёрточные нейронные сети классификации клеток, асинхронный конечно-автоматный фильтр помех, логико-символьный верификатор правил ФИДЕ, транзакционный репозиторий с криптографическим хеш-цепочечным связыванием и службу шахматного анализа на базе UCI-движка Stockfish~16.
+Разработка программного комплекса автономной видеорегистрации и анализа шахматных партий выполнена в соответствии с архитектурными решениями, математическими моделями и онтологической структурой предметной области, описанными в разделе~2. Созданная система объединяет низкоуровневые алгоритмы компьютерного зрения, нейросетевые модели классификации клеток и целостного анализа доски, асинхронный конечно-автоматный фильтр помех, логико-символьный верификатор правил ФИДЕ, транзакционный репозиторий с криптографическим хеш-цепочечным связыванием, веб-панель оператора на базе \texttt{FastAPI} и службу шахматного анализа на базе UCI-движка \texttt{Stockfish~16}.
 
 \subsection{Выбор средств и технологий реализации}
 
-Выбор технологического стека обусловлен высокими требованиями к надёжности системы, строгому контролю задержек инференса в режиме реального времени ($\le 35$~мс на кадр), необходимости строгой типизации данных и переносимости между различными операционными системами (Linux, Windows, macOS).
+Выбор технологического стека обусловлен требованиями надёжности работы на стандартном центральном процессоре, строгим контролем задержек цикла захвата ($\le 35$~мс на кадр в фазе детекции движения и стабилизации), строгой типизацией межмодульных контрактов и переносимостью между ОС Linux и Docker-контейнерами:
 
 \begin{enumerate}
-    \item \textbf{Язык программирования Python 3.10+}. Выбран в качестве базового языка интеграции благодаря развитой экосистеме библиотек машинного обучения и компьютерного зрения, встроенной поддержке строгой статической типизации (\texttt{typing}, \texttt{mypy}), валидации контрактов данных через \texttt{pydantic~v2} и эффективным примитивам многопоточности (\texttt{threading}, \texttt{queue}).
-    \item \textbf{Фреймворки глубокого обучения и инференса (PyTorch~2.x и ONNX Runtime~1.17+)}. Обучение нейросетевых архитектур (EfficientNet-B0 с многоголовой структурой Multi-Head) выполнено на базе PyTorch. Для этапа промышленной эксплуатации и стендового инференса модели экспортируются в открытый формат ONNX. Библиотека ONNX Runtime обеспечивает внутрипроцессорный параллелизм (intra-op threading) и оптимизацию графа вычислений, сокращая среднее время классификации 64 клеток до 0,5--3,5~мс на стандартном центральном процессоре без необходимости использования дискретных GPU.
-    \item \textbf{Библиотека компьютерного зрения OpenCV 4.9+}. Используется для низкоуровневой обработки изображений: преобразования цветовых пространств (BGR, Grayscale, YCrCb), расчёта гауссова размытия, детектирования границ оператором Кэнни, вероятностного преобразования Хафа, расчёта матрицы проективной гомографии $H$ алгоритмом RANSAC, бикубической нормализации доски $640 \times 640$ пикселей и интерактивного вывода операторского интерфейса через подсистему HighGUI.
-    \item \textbf{Комплекс отслеживания рук (MediaPipe Hand Landmarker)}. Обеспечивает пространственную 21-точечную 3D-детекцию скелета кисти руки игрока над игровой зоной. Для сред без предустановленного Google MediaPipe в системе реализован встроенный цветовой детектор \texttt{ColorSilhouetteHandDetector} на основе цветовой сегментации оттенков кожи в пространстве YCrCb.
-    \item \textbf{Логико-символьное ядро шахматных правил (python-chess 1.10+)}. Предоставляет математически строгое, верифицированное представление правил Международной шахматной федерации (FIDE). Обеспечивает генерацию псевдолегальных и легальных ходов, проверку шахов, матов, патов, распознавание троекратного повторения позиций и правила 50 ходов, а также сериализацию позиций в нотации FEN и PGN.
-    \item \textbf{Подсистема компьютерного анализа (Stockfish 16 UCI)}. Сильнейший в мире открытый шахматный движок с открытым исходным кодом, использующий нейросетевую оценочную функцию NNUE. Интегрирован через асинхронный протокол UCI с динамическим контролем очередей задач и тайм-аутов, что исключает блокировку первичного видеоконвейера.
-    \item \textbf{Средства тестирования и контроля качества (pytest 9.x, coverage, MLflow)}. Автоматизированный запуск модульных, интеграционных, аварийных (crash-injection) и сквозных тестов с расчётом покрытия кода и логированием параметров обучения.
+    \item \textbf{Язык программирования Python 3.10--3.14}. Выбран в качестве базового языка интеграции благодаря развитой экосистеме библиотек машинного обучения и компьютерного зрения, поддержке статической типизации (\texttt{typing}), строгой валидации контрактов данных через \texttt{pydantic~v2} и примитивам многопоточности (\texttt{threading}, \texttt{queue}).
+    \item \textbf{Фреймворки глубокого обучения и инференса (PyTorch~2.2+~\cite{Paszke2019} и ONNX Runtime~1.17+~\cite{ONNXRuntime2021})}. Обучение и квантование моделей выполнено на базе PyTorch, а промышленный CPU-инференс переведён в формат ONNX. В гибридном конвейере используются как компактный свёрточный поклеточный классификатор (\texttt{EfficientNet-B0}~\cite{Wolflein2021}), так и целостный визуальный трансформер всей доски \texttt{ChessQ-Lite (ViT-S14 INT8)}~\cite{Dosovitskiy2021} совместно с патч-эмбеддингами \texttt{DINOv2-Small INT8}~\cite{Oquab2024} для инвариантного к освещению сравнения состояний клеток.
+    \item \textbf{Библиотека компьютерного зрения OpenCV 4.9+~\cite{Bradski2000}}. Используется для захвата и нормализации кадров, цветовых преобразований, гауссова сглаживания, детектирования границ оператором Кэнни, вероятностного преобразования Хафа, 1D-проективной и RANSAC-оценки~\cite{Fischler1981} четырёх углов доски, расчёта матрицы перспективной гомографии $H$~\cite{Szeliski2022} и геометрического выпрямления доски к размеру $640 \times 640$ пикселей.
+    \item \textbf{Комплекс отслеживания рук (MediaPipe Hand Landmarker~\cite{Lugaresi2019})}. Обеспечивает пространственную 21-точечную детекцию скелета кисти руки игрока над игровой зоной. Для сред без модели или при отсутствии явной кисти дополнительно действует цветово-силуэтный детектор \texttt{ColorSilhouetteHandDetector} в пространстве YCrCb.
+    \item \textbf{Логико-символьное ядро шахматных правил (python-chess 1.10+~\cite{Fiekas2024})}. Предоставляет строгое верифицированное представление правил Международной шахматной федерации~\cite{FIDE2023}: генерацию легальных ходов, распознавание шахов, матов, патов, троекратного повторения, правила 50 ходов и сериализацию в форматы FEN и PGN.
+    \item \textbf{Подсистема компьютерного анализа (Stockfish 16 UCI~\cite{Romstad2024})}. Открытый шахматный движок с нейросетевой оценочной функцией NNUE. Интегрирован через асинхронный протокол UCI с очередью задач и эпохальной отменой устаревших запросов при сбросе или откате партии.
+    \item \textbf{Веб-стекинг и контейнеризация (FastAPI, Uvicorn, WebSocket, MJPEG, Docker Compose)}. Обеспечивает кроссплатформенную операторскую панель в браузере, трансляцию видеопотока \texttt{MJPEG}, реактивное обновление состояния партии через \texttt{WebSocket}, запись видеоархива и офлайн-транскрибацию видеофайлов.
+    \item \textbf{Средства тестирования (pytest 9.2+)}. Автоматизированный запуск модульных, интеграционных, отказоустойчивых (fault-injection), веб-интерфейсных и сквозных тестов.
 \end{enumerate}
 
-Сводное сопоставление выбранных технологий и реализуемых ими архитектурных компонентов системы приведено в таблице~\ref{tab:tech-stack}.
+Сводное сопоставление выбранных технологий и реализуемых ими архитектурных компонентов приведено в таблице~\ref{tab:tech-stack}.
 
 \begin{table}[htbp]
 \centering
 \caption{Фактический технологический стек программной реализации}
 \label{tab:tech-stack}
-\begin{tabular}{|>{\raggedright\arraybackslash}p{0.25\textwidth}|>{\raggedright\arraybackslash}p{0.25\textwidth}|>{\raggedright\arraybackslash}p{0.42\textwidth}|}
+\begin{tabular}{|>{\raggedright\arraybackslash}p{0.27\textwidth}|>{\raggedright\arraybackslash}p{0.21\textwidth}|>{\raggedright\arraybackslash}p{0.44\textwidth}|}
 \hline
 \textbf{Технология / Инструмент} & \textbf{Версия} & \textbf{Назначение в архитектуре} \\
 \hline
-Python & 3.10 -- 3.14 & Единая среда интеграции компонентов, бизнес-логика. \\
+Python & 3.10 -- 3.14 & Единая среда интеграции компонентов, бизнес-логика, CLI. \\
 \hline
-Pydantic & 2.6+ & Неизменяемые контракты данных (\texttt{Frame}, \texttt{MoveEvent}, \texttt{PipelineState}). \\
+Pydantic & 2.6+ & Строго типизированные контракты данных (\texttt{Frame}, \texttt{MoveEvent}, \texttt{BoardGeometry}). \\
 \hline
-OpenCV & 4.9+ & Проективная геометрия, фильтрация оптического движения, HUD. \\
+OpenCV & 4.9+ & Проективная геометрия, фильтрация движения, Hough/Huber/RANSAC, HUD. \\
 \hline
-ONNX Runtime & 1.17+ & Высокопроизводительный инференс классификатора клеток на CPU. \\
+PyTorch / ONNX Runtime & 2.2+ / 1.17+ & Обучение и CPU-инференс \texttt{EfficientNet-B0}, \texttt{ChessQ-Lite ViT} и \texttt{DINOv2}. \\
 \hline
-PyTorch & 2.2+ & Обучение многоголовой нейросетевой модели \texttt{MultiHeadPieceClassifier}. \\
-\hline
-MediaPipe & 0.10+ & Пространственная детекция кисти руки и расчет окклюзии клеток. \\
+MediaPipe & 0.10+ & Пространственная детекция кисти руки и расчёт окклюзии 64 полей. \\
 \hline
 python-chess & 1.10+ & Авторитетный символьный решатель, правила ФИДЕ, FEN/PGN. \\
 \hline
-Stockfish & 16 (UCI) & Фоновый шахматный анализ позиций, классификация ошибок. \\
+Stockfish & 16 (UCI) & Фоновый шахматный анализ позиций, шкала перевеса и классификация ошибок. \\
 \hline
-Pytest & 9.2+ & Модульное, интеграционное и бенчмарк-тестирование (231 тест). \\
+FastAPI / WebSocket & 0.110+ & Веб-сервер панели оператора, \texttt{MJPEG}-поток, REST API и синхронизация состояния. \\
+\hline
+Docker Compose & v2 & Изолированное развёртывание контейнеров \texttt{chess-recorder-web} и \texttt{gui}. \\
+\hline
+Pytest & 9.2+ & Модульное, интеграционное, веб-API и сквозное тестирование (285 тестов). \\
 \hline
 \end{tabular}
 \end{table}
 
 \subsection{Структура программной реализации}
 
-Исходный код системы структурирован по модульному принципу в пакете \texttt{src/}, обеспечивая слабую связность (low coupling) и высокую функциональную целостность (high cohesion). Каталог исходных кодов организован следующим образом:
+Исходный код системы структурирован по модульному принципу в пакете \texttt{src/} с чётким разделением контуров:
 
 \begin{itemize}
-    \item \texttt{src/core/} --- центральные контракты данных, неизменяемые структуры событий, единая иерархия конфигураций (\texttt{AppConfig}) и типизированные исключения;
-    \item \texttt{src/vision/} --- подсистема компьютерного зрения: захват кадров, локализация контура доски, расчет проективной гомографии, компенсация параллакса фигур, оптическое движение и отслеживание рук;
-    \item \texttt{src/ml/} --- нейросетевые модели, функции потерь с маскированием (\texttt{MaskedMultiHeadLoss}), конвейеры аугментации данных и абстракции инференса классификатора клеток;
-    \item \texttt{src/reasoning/} --- логико-символьный уровень: конечный автомат (FSM), генератор гипотез легальных ходов, многофакторный взвешенный скорер, шлюз принятия решений (\texttt{DecisionGate}) и авторитетный менеджер состояния (\texttt{GameStateManager});
-    \item \texttt{src/persistence/} --- транзакционный репозиторий событий с SHA-256 хеш-цепочками, модуль сохранения фотоартефактов ходов и служба аварийного восстановления сессий;
-    \item \texttt{src/analysis/} --- подсистема асинхронного шахматного анализа: супервизор процесса Stockfish UCI, потокобезопасная очередь задач, классификатор качества ходов по шкале сантипешек ($cp$);
-    \item \texttt{src/ui/} --- модули пользовательского интерфейса: композитор графического оверлея (HUD), интерактивный дашборд оператора на OpenCV HighGUI и консольный CLI-интерфейс (\texttt{main.py}).
+    \item \texttt{src/core/} --- контракты данных (\texttt{datatypes.py}), конфигурация (\texttt{config.py}), логирование и исключения;
+    \item \texttt{src/vision/} --- захват видео (\texttt{VideoAdapter}), локализация и трекинг углов доски (\texttt{BoardLocalizer}, \texttt{CornerRefiner}, \texttt{BoardGeometryTracker}), гомография, трекинг занятости зоны основания фигур (\texttt{Base-Core}), оптическое движение и детекция рук;
+    \item \texttt{src/ml/} --- поклеточный классификатор (\texttt{ONNXPieceClassifier}), целостный трансформер всей доски (\texttt{WholeBoardChessQClassifier}), детектор изменений по патч-эмбеддингам \texttt{DINOv2PatchChangeDetector}, авторазметчик и пайплайн обучения;
+    \item \texttt{src/reasoning/} --- конечный автомат \texttt{GameFSM}, генератор легальных кандидатов, многофакторный скорер, шлюз принятия решений \texttt{DecisionGate} и авторитетный менеджер \texttt{GameStateManager};
+    \item \texttt{src/persistence/} --- транзакционный журнал \texttt{events.jsonl} с SHA-256 хеш-цепочками, сохранение фотодоказательств и модуль восстановления \texttt{RecoveryManager};
+    \item \texttt{src/analysis/} --- асинхронный супервизор процесса Stockfish, потокобезопасная очередь задач с эпохальной отменой и оценщик ходов по сантипешкам;
+    \item \texttt{src/ui/} --- веб-сервер \texttt{src/ui/web/} (\texttt{FastAPI}, \texttt{MJPEGVideoStreamer}, \texttt{WebSocketManager}, видеосервисы записи и офлайн-анализа, SPA-интерфейс), оверлей \texttt{VisualHUDComposer}, десктопный \texttt{InteractiveDashboard} и точка входа CLI (\texttt{src/ui/cli.py}).
 \end{itemize}
 
 Детальная спецификация программных модулей, реализованных классов и их функций представлена в таблице~\ref{tab:code-structure}.
 
-\begin{table}[htbp]
-\centering
-\caption{Структурная декомпозиция программной реализации}
-\label{tab:code-structure}
-\begin{tabular}{|>{\raggedright\arraybackslash}p{0.22\textwidth}|>{\raggedright\arraybackslash}p{0.26\textwidth}|>{\raggedright\arraybackslash}p{0.44\textwidth}|}
+\begin{longtable}{|>{\raggedright\arraybackslash}p{0.23\textwidth}|>{\raggedright\arraybackslash}p{0.27\textwidth}|>{\raggedright\arraybackslash}p{0.42\textwidth}|}
+\caption{Структурная декомпозиция программной реализации}\label{tab:code-structure} \\
 \hline
-\textbf{Модуль (файл)} & \textbf{Ключевые классы} & \textbf{Назначение и функционал} \\
+\textbf{Модуль} & \textbf{Ключевые классы} & \textbf{Назначение и функционал} \\
 \hline
-\texttt{src.core.datatypes} & \texttt{Frame}, \texttt{BoardGeometry}, \texttt{CellObservation}, \texttt{BoardObservation}, \texttt{MoveHypothesis}, \texttt{DecisionResult}, \texttt{MoveEvent}, \texttt{PipelineState} & Спецификация строгих типизированных моделей данных Pydantic, сериализация, валидация полей и контрактов конвейера. \\
+\endfirsthead
 \hline
-\texttt{src.core.config} & \texttt{AppConfig}, \texttt{VisionConfig}, \texttt{TemporalConfig}, \texttt{DecisionConfig}, \texttt{AnalysisConfig}, \texttt{PersistenceConfig}, \texttt{UIConfig} & Иерархическая конфигурация системы из YAML-файлов с поддержкой глубокого слияния и переменных окружения. \\
+\textbf{Модуль} & \textbf{Ключевые классы} & \textbf{Назначение и функционал} \\
 \hline
-\texttt{src.vision.board\_localizer} & \texttt{BaseBoardLocalizer}, \texttt{CoarseToFineLocalizer}, \texttt{ManualCornerLocalizer} & Двухстадийная детекция четырёхугольника доски (YOLOv8 + Canny/Hough/RANSAC) и суперопределенный расчет углов. \\
+\endhead
+\texttt{src.core.datatypes} & \texttt{Frame}, \texttt{BoardGeometry}, \texttt{CellObservation}, \texttt{MoveEvent}, \texttt{PipelineState} & Строго типизированные контракты Pydantic для передачи наблюдений и событий по конвейеру. \\
 \hline
-\texttt{src.vision.homography} & \texttt{GeometryTransformer} & Расчёт проективной матрицы $H \in \mathbb{R}^{3 \times 3}$, нормализация изображения доски $640 \times 640$ и оценка погрешности. \\
+\texttt{src.core.config} & \texttt{AppConfig}, \texttt{VisionConfig}, \texttt{TemporalConfig}, \texttt{DecisionConfig} & Иерархическая загрузка параметров из YAML с переопределением через переменные окружения. \\
 \hline
-\texttt{src.vision.motion\_detector} & \texttt{MotionDetector} & Дифференциальное межкадровое вычитание с выравниванием глобальной яркости и экспоненциальным сглаживанием EMA. \\
+\texttt{src.vision.board\_localizer} & \texttt{CoarseToFineLocalizer}, \texttt{BoardGeometryTracker} & Двухстадийная детекция углов (YOLOv8 + Canny/Hough/Huber/RANSAC + 1D-проективная проверка) и EMA-трекинг дрейфа. \\
 \hline
-\texttt{src.vision.hand\_detector} & \texttt{HandDetector}, \texttt{ColorSilhouetteHandDetector} & Пространственная детекция кисти руки, построение маски окклюзии клеток и расчет коэффициента перекрытия. \\
+\texttt{src.vision.homography} & \texttt{GeometryTransformer} & Расчёт матрицы $H \in \mathbb{R}^{3 \times 3}$, нормализация кадра к $640 \times 640$ пикселей, проверка выпуклости и обратных ошибок. \\
 \hline
-\texttt{src.vision.roi\_extractor} & \texttt{CellRoiExtractor} & Поклеточная нарезка 64 квадратов с адаптивным вертикальным расширением $\alpha=1{,}25$ для компенсации параллакса фигур. \\
+\texttt{src.vision.occupancy\_tracker} & \texttt{BoardOccupancyTracker} & Инвариантная к яркости и теням оценка занятости клеток в зоне основания фигуры (\textit{Base-Core}). \\
 \hline
-\texttt{src.ml.piece\_classifier} & \texttt{BasePieceClassifier}, \texttt{ONNXPieceClassifier}, \texttt{MockPieceClassifier} & Пакетный инференс (batch=64) классификатора шахматных клеток в 13 канонических классов (empty, wP..bK). \\
+\texttt{src.vision.motion\_detector}, \texttt{hand\_detector} & \texttt{MotionDetector}, \texttt{HandDetector}, \texttt{ColorSilhouetteHandDetector} & Подавление глобальных скачков яркости, межкадровый анализ и 21-точечная маска перекрытия рукой. \\
 \hline
-\texttt{src.reasoning.fsm} & \texttt{GameFSM} & 9-позиционный конечный автомат дебаунсинга состояний (\texttt{STABLE}, \texttt{MOVING}, \texttt{SETTLING}, \texttt{VERIFYING}, \texttt{UNCERTAIN}). \\
+\texttt{src.ml.piece\_classifier} & \texttt{ONNXPieceClassifier}, \texttt{WholeBoardChessQClassifier}, \texttt{DINOv2PatchChangeDetector} & Пакетный инференс 64 клеток, целостное распознавание всей доски \texttt{ChessQ-Lite ViT-S14} и сравнение патчей \texttt{DINOv2}. \\
 \hline
-\texttt{src.reasoning.candidate\_generator} & \texttt{LegalMoveCandidateGenerator} & Поиск изменившихся полей по дельте вероятностей и фильтрация легальных ходов из текущего состояния доски. \\
+\texttt{src.reasoning.fsm} & \texttt{GameFSM} & Конечный автомат фильтрации помех (\texttt{PAUSED}, \texttt{IDLE}, \texttt{CALIBRATING}, \texttt{STABLE}, \texttt{MOVING}, \texttt{SETTLING}, \texttt{VERIFYING}, \texttt{UNCERTAIN}). \\
 \hline
-\texttt{src.reasoning.scorer} & \texttt{MoveScorer} & Численный расчет интегрального правдоподобия $S(m) = w_v S_v + w_t S_t + w_g S_g - w_o P_o$ для каждого кандидата. \\
+\texttt{src.reasoning.*} & \texttt{LegalMoveCandidateGenerator}, \texttt{MoveScorer}, \texttt{DecisionGate}, \texttt{GameStateManager} & Топологическая фильтрация легальных ходов ФИДЕ, скоринг $S(m)$, проверка запаса $\Delta$ и авторитетное обновление позиции. \\
 \hline
-\texttt{src.reasoning.decision\_gate} & \texttt{DecisionGate} & Пороговая фильтрация кандидатов, проверка маржинальности $\Delta \ge 0{,}15$ и маршрутизация решения (\texttt{ACCEPTED} / \texttt{UNCERTAIN}). \\
+\texttt{src.persistence.*} & \texttt{JSONLEventRepository}, \texttt{EvidenceWriter}, \texttt{RecoveryManager} & Атомарный аудит \texttt{events.jsonl} с SHA-256 цепочкой (\texttt{move}, \texttt{rollback}, \texttt{illegal\_attempt}) и усечением битого хвоста. \\
 \hline
-\texttt{src.reasoning.game\_state\_manager} & \texttt{GameStateManager} & Авторитетное потокобезопасное хранилище официальной партии (\texttt{chess.Board}), фиксация ходов, откат и экспорт PGN. \\
+\texttt{src.analysis.*} & \texttt{StockfishWorker}, \texttt{AsyncEngineService}, \texttt{MoveEvaluator} & Неблокирующий UCI-анализ с эпохальной отменой устаревших задач и оценкой потерь в сантипешках. \\
 \hline
-\texttt{src.persistence.event\_repository} & \texttt{JSONLEventRepository} & Атомарная запись событий партии в журнал \texttt{events.jsonl} с SHA-256 цепочечным связыванием и контролем \texttt{fsync}. \\
+\texttt{src.orchestrator} & \texttt{SystemOrchestrator} & Сквозной дирижёр конвейера: управление сессиями, калибровкой, гибридной верификацией и публикацией состояний. \\
 \hline
-\texttt{src.persistence.evidence\_writer} & \texttt{EvidenceWriter} & Сохранение фотоартефактов доски в моменты фиксации ходов с метаданными и выборочной политикой удержания. \\
+\texttt{src.ui.web.*} & \texttt{app}, \texttt{MJPEGVideoStreamer}, \texttt{WebSocketManager}, \texttt{VideoTranscriptionManager} & FastAPI-бэкенд, потоковая передача MJPEG, двусторонняя синхронизация WS, выбор V4L2/видео и офлайн-анализ файлов. \\
 \hline
-\texttt{src.persistence.recovery\_manager} & \texttt{RecoveryManager} & Служба отказоустойчивости: обнаружение поврежденных хвостовых записей при обрыве питания и восстановление позиции. \\
+\texttt{src.ui.visualizer}, \texttt{dashboard}, \texttt{cli} & \texttt{VisualHUDComposer}, \texttt{InteractiveDashboard}, \texttt{main} & Графический оверлей, локальный OpenCV HUD и CLI с подкомандами \texttt{record}, \texttt{web}, \texttt{audit}, \texttt{replay}, \texttt{benchmark}. \\
 \hline
-\texttt{src.analysis.engine\_service} & \texttt{AsyncEngineService}, \texttt{MoveEvaluator} & Неблокирующий фоновый конвейер вызова Stockfish, расчет потерь в сантипешках и категоризация качества ходов. \\
-\hline
-\texttt{src.orchestrator} & \texttt{SystemOrchestrator} & Сквозной дирижирующий фасад системы, связывающий все слои от захвата кадра до генерации PGN и управления сессией. \\
-\hline
-\texttt{src.ui.visualizer} & \texttt{VisualHUDComposer} & Отрисовка графического интерфейса: сетка клеток, 2D-доска, FSM-статусы, список ходов, шкала преимущества и окно алертов. \\
-\hline
-\texttt{src.ui.dashboard} & \texttt{InteractiveDashboard} & Интерактивное рабочее место оператора на базе OpenCV HighGUI с обработкой горячих клавиш и headless-переключением. \\
-\hline
-\texttt{src.ui.cli} & \texttt{main}, \texttt{build\_parser} & Консольная точка входа с подкомандами \texttt{record}, \texttt{audit}, \texttt{replay}, \texttt{benchmark}. \\
-\hline
-\end{tabular}
-\end{table}
+\end{longtable}
 
 \subsection{Реализация пользовательского интерфейса}
 
-В соответствии с требованиями эргономики и условиями эксплуатации программный комплекс предоставляет двухуровневый интерфейс:
+В соответствии с требованиями академической и эксплуатационной строгости программный комплекс реализует трёхуровневый пользовательский интерфейс:
 \begin{enumerate}
-    \item \textbf{Консольный интерфейс командной строки (CLI)}: обеспечивает запуск автоматической пакетной обработки видеозаписей, криптографический аудит целостности журналов, детерминированное пошаговое воспроизведение и запуск эталонных бенчмарков.
-    \item \textbf{Интерактивный графический экран оператора (Visual HUD Dashboard)}: формирует целостную композицию видеопотока с графическими информационными слоями разрешения $1280 \times 720$ или $1920 \times 1080$ пикселей с частотой обновления 30--60 кадров в секунду.
+    \item \textbf{Интерактивная веб-панель оператора (Web Dashboard SPA)}: основное рабочее место пользователя на базе \texttt{FastAPI}, протокола \texttt{WebSocket} (\texttt{/ws/live}) и потокового видео \texttt{MJPEG} (\texttt{/stream/video}), не требующее локального X11/Wayland-сервера при запуске в Docker-контейнере.
+    \item \textbf{Локальный графический экран (Visual HUD Dashboard)}: автономное окно на OpenCV HighGUI с автоматическим переходом в режим \texttt{headless} при отсутствии дисплея.
+    \item \textbf{Консольный интерфейс (CLI)}: подкоманды \texttt{record}, \texttt{web}, \texttt{audit}, \texttt{replay} и \texttt{benchmark} для автоматизированного и пакетного применения.
 \end{enumerate}
 
-Графический экран оператора логически разделен на две основные функциональные зоны (рисунок~\ref{fig:hud-layout}):
+Веб-панель оператора логически разделена на верхнюю командную панель управления и двухоконную рабочую область (рисунки~\ref{fig:design-architecture} и~\ref{fig:ui-web-main}):
 \begin{itemize}
-    \item \textbf{Левая зона (Видеоканал физической доски, 65\% ширины)}:
-    \begin{itemize}
-        \item полигональная сетка четырёхугольника доски и линий 64 клеток с буквенно-цифровыми обозначениями $a1 \dots h8$;
-        \item цветовая индикация последнего совершённого хода (зелёный маркер для поля отправления, бирюзовый маркер для поля прибытия);
-        \item полупрозрачная маска перекрытия клеток рукой игрока (красная подсветка);
-        \item крупный бейдж текущего состояния FSM с динамической цветовой кодировкой (\texttt{STABLE} --- зелёный, \texttt{MOVING} --- жёлтый, \texttt{SETTLING} --- оранжевый, \texttt{VERIFYING} --- фиолетовый, \texttt{UNCERTAIN} --- красный, \texttt{BOARD\_LOST} --- серый);
-        \item строка телеметрии в нижней части экрана: мгновенный FPS, номер видеокадра, номер текущего полухода, оптический уровень движения и статус руки.
-    \end{itemize}
-    \item \textbf{Правая зона (Аналитическая боковая панель, 35\% ширины)}:
-    \begin{itemize}
-        \item виртуальная 2D-доска $8 \times 8$: проекция текущего авторитетного состояния \texttt{chess.Board} с контрастной отрисовкой фигур белого и чёрного цветов;
-        \item шкала преимущества Stockfish (Eval Gauge): двухцветный графический индикатор перевеса сторон в сантипешках ($\pm cp$), оценка позиции (например, $+1{,}45$ или $M2$) и рекомендуемый компьютером лучший ход;
-        \item прокручиваемый журнал зарегистрированных ходов: список последних ходов партии в стандартной нотации FIDE SAN с цветными бейджами качества от Stockfish (\texttt{BEST}, \texttt{EXCELLENT}, \texttt{INACCURACY}, \texttt{MISTAKE}, \texttt{BLUNDER});
-        \item панель подсказок горячих клавиш оператора.
-    \end{itemize}
+    \item \textbf{Командная панель}: селектор источника видео (камеры \texttt{/dev/video*}, RTSP-потоки и загруженные видеозаписи), строго формализованные кнопки управления процессом (\textit{«Запуск / Пауза»}, \textit{«Калибровка»}, \textit{«Перекалибровка»}, \textit{«Отмена»}, \textit{«Сброс»}), менеджер сессий, инструменты записи видеопотока, запуска офлайн-анализа видеофайла и экспорта протокола в стандарт \texttt{PGN}.
+    \item \textbf{Левая область (Видеоканал и геометрия)}: потоковое изображение с наложенной четырёхугольной сеткой доски и буквенно-цифровой координатной привязкой, интерактивные угловые маркеры для ручной подстройки с пересчётом координат под режим \texttt{object-fit: contain}, бейдж состояния FSM и строка телеметрии (FPS, номер кадра, номер полухода).
+    \item \textbf{Правая область (Позиция, история и анализ)}: интерактивная виртуальная 2D-доска, вертикальная шкала преимущества \texttt{Stockfish} (Eval Gauge), прокручиваемая таблица ходов с возможностью пошагового ретроспективного просмотра позиции и цветовой маркировкой качества хода (\texttt{BEST}, \texttt{INACCURACY}, \texttt{MISTAKE}, \texttt{BLUNDER}).
 \end{itemize}
+
+При возникновении спорной ситуации или физической перестановки фигур, не соответствующей ни одному легальному ходу ФИДЕ, система переводит автомат в состояние \texttt{UNCERTAIN}, фиксирует инцидент \texttt{illegal\_attempt} в журнале и отображает неблокирующую сворачиваемую панель диагностики с перечнем изменённых полей, топ-кандидатами (при наличии) и полем ручного ввода хода в нотации UCI. В отличие от ранних прототипов, панель не перекрывает видеоканал и не препятствует возврату фигур на доску для автоматического продолжения партии.
+
+На рисунках~\ref{fig:ui-web-main}--\ref{fig:ui-history-eval} предусмотрены области для размещения скриншотов экранных форм веб-панели оператора.
 
 \begin{figure}[htbp]
 \centering
-\includegraphics[width=0.92\textwidth]{picture/design_figures/system_architecture.pdf}
-\caption{Структурная схема конвейера обработки кадров и формирования интерфейса оператора}
-\label{fig:hud-layout}
+\fbox{\parbox{0.92\textwidth}{\centering\vspace{3.4cm}\textit{[Место для скриншота интерфейса: главная рабочая область веб-панели оператора во время видеорегистрации партии]}\vspace{3.4cm}}}
+\caption{Главная страница веб-панели оператора в процессе видеорегистрации партии}
+\label{fig:ui-web-main}
 \end{figure}
 
-При возникновении спорных игровых ситуаций или падении уверенности шлюза принятия решений ниже порога маржинальности ($\Delta < \tau_{\text{margin}}$), система переходит в состояние \texttt{UNCERTAIN}. Поверх рабочего экрана выводится модальное диалоговое окно (Alert Modal), отображающее ранжированный список альтернативных гипотез ходов с их интегральными скорами $S(m)$. Оператор имеет возможность:
-\begin{itemize}
-    \item нажать клавишу \texttt{U} для автоматического принятия наиболее вероятного кандидата;
-    \item нажать клавиши \texttt{1}..\texttt{5} для ручного выбора конкретного хода из предложенного списка;
-    \item нажать клавишу \texttt{Z} для отклонения гипотезы и отката последнего ошибочного действия;
-    \item нажать клавишу \texttt{Space} для постановки видеорегистрации на паузу при необходимости проверки расстановки фигур.
-\end{itemize}
+\begin{figure}[htbp]
+\centering
+\fbox{\parbox{0.92\textwidth}{\centering\vspace{3.4cm}\textit{[Место для скриншота интерфейса: режим калибровки доски с интерактивными угловыми маркерами и привязкой осей]}\vspace{3.4cm}}}
+\caption{Интерактивная калибровка и перекалибровка углов шахматной доски}
+\label{fig:ui-calibration}
+\end{figure}
 
-В средах без графического дисплейного сервера (например, на удалённых серверах, в Docker-контейнерах или автоматизированных стендах CI/CD) дашборд автоматически обнаруживает отсутствие переменных \texttt{DISPLAY} и \texttt{WAYLAND\_DISPLAY} и прозрачно переключается в режим \texttt{headless}, исключая аварийные завершения вызовов OpenCV HighGUI.
+\begin{figure}[htbp]
+\centering
+\fbox{\parbox{0.92\textwidth}{\centering\vspace{3.4cm}\textit{[Место для скриншота интерфейса: сворачиваемая панель диагностики UNCERTAIN и фиксации нелегального хода]}\vspace{3.4cm}}}
+\caption{Сворачиваемая панель разрешения неоднозначности и диагностики нелегального хода}
+\label{fig:ui-uncertain}
+\end{figure}
+
+\begin{figure}[htbp]
+\centering
+\fbox{\parbox{0.92\textwidth}{\centering\vspace{3.4cm}\textit{[Место для скриншота интерфейса: таблица ходов, пошаговый просмотр позиции и шкала оценки Stockfish]}\vspace{3.4cm}}}
+\caption{Аналитическая панель с историей ходов, шкалой Stockfish и экспортом PGN}
+\label{fig:ui-history-eval}
+\end{figure}
 
 \subsection{Тестирование интеллектуальной системы}
 
-Надёжность и корректность функционирования системы подтверждены многоуровневым набором автоматизированных тестов, охватывающим как изолированные модули, так и сложные сквозные сценарии взаимодействия. Комплекс включает 231 тест, выполняемый за 30,5~с.
+Надёжность, детерминизм и отказоустойчивость программного комплекса подтверждены многоуровневым комплексом автоматизированного тестирования. Набор включает \textbf{285 тестов} в 38 тестовых модулях, выполняемых за $45{,}46$~с со 100\% успешностью.
 
-Структура тестирования разделена на четыре основных уровня:
+Помимо функционального тестирования был проведён комплексный шестиагентный аудит кодовой базы (веб-интерфейс и API, сервисы/CLI/Docker, оркестратор и FSM, персистентность и Stockfish, компьютерное зрение и ML), по результатам которого устранены критические и архитектурные дефекты:
+\begin{itemize}
+    \item устранена гонка потоков при переключении видеоисточника V4L2 и нормализован пересчёт координат мыши при \texttt{object-fit: contain};
+    \item введена устойчивая M-оценка Хубера (\texttt{cv2.DIST\_HUBER}), детерминированная инициализация ГПСЧ при выделении отрезков Хафа и строгий штраф внутренних подсеток доски;
+    \item обеспечено корректное определение нелегальных телепортов фигур с регистрацией записи \texttt{illegal\_attempt} и их фильтрацией при формировании PGN;
+    \item реализовано атомарное восстановление журнала событий при обрыве записи (усечение \texttt{r+b} через \texttt{truncate} и \texttt{fsync}), эпохальная отмена устаревших задач Stockfish и безопасный откат при закрытом движке;
+    \item исправлена оценка доставленного мата (\texttt{mate\_in = 0}) без ложной классификации как грубой ошибки.
+\end{itemize}
 
-\begin{enumerate}
-    \item \textbf{Компонентное тестирование (Unit Testing)}:
-    \begin{itemize}
-        \item геометрические преобразования (\texttt{test\_homography.py}, \texttt{test\_corner\_refinement.py}): проверка расчёта матриц гомографии, проекций точек $P_{img} \leftrightarrow P_{board}$, устойчивости алгоритма RANSAC к угловым выбросам и точности субпиксельного уточнения;
-        \item устойчивость детекции ориентации (\texttt{test\_orientation.py}): проверка трехфакторного каскада (правило цвета правого угла $h1$, весовое распределение фигур) на инвертированных и повернутых досках;
-        \item оптическое движение и отслеживание рук (\texttt{test\_motion\_detector.py}, \texttt{test\_hand\_detector.py}): верификация межкадровой разности при скачках экспозиции и корректности геометрической локализации окклюзии клеток;
-        \item нейросетевая классификация клеток (\texttt{test\_piece\_classifier.py}, \texttt{test\_dataset.py}): проверка размерностей входов и выходов, вычисления маскированных потерь \texttt{MaskedMultiHeadLoss} и стабильности ONNX-инференса;
-        \item символьный решатель (\texttt{test\_reasoning.py}): генерация легальных ходов, выявление изменившихся клеток, взвешенное многофакторное скорирование $S(m)$ и фильтрация шлюзом решений.
-    \end{itemize}
-    \item \textbf{Интеграционное тестирование подсистем}:
-    \begin{itemize}
-        \item дебаунсинг и переходы конечного автомата (\texttt{test\_fsm.py}): верификация цепочек переходов \texttt{IDLE} $\to$ \texttt{CALIBRATING} $\to$ \texttt{STABLE} $\to$ \texttt{MOVING} $\to$ \texttt{SETTLING} $\to$ \texttt{VERIFYING} $\to$ \texttt{STABLE};
-        \item транзакционная персистентность (\texttt{test\_event\_repository.py}, \texttt{test\_evidence.py}): проверка атомарной дозаписи событий, вычисления SHA-256 хеш-сумм и выборочной фиксации фотодоказательств;
-        \item асинхронный шахматный анализ (\texttt{test\_stockfish\_worker.py}, \texttt{test\_async\_engine.py}): стресс-тестирование супервизора процесса Stockfish, устойчивость к искусственным зависаниям (timeout recovery) и защита первичного видеопотока при переполнении очереди задач.
-    \end{itemize}
-    \item \textbf{Стресс-тестирование отказоустойчивости (Fault Injection Testing, \texttt{test\_recovery.py})}:
-    \begin{itemize}
-        \item моделирование внезапного обесточивания аппаратного комплекса: обрыв записи на середине строки JSONL в файле \texttt{events.jsonl}; менеджер восстановления \texttt{RecoveryManager} автоматически детектирует повреждённую хвостовую запись, выполняет безопасное усечение (truncate) и восстанавливает позицию \texttt{chess.Board} по валидной предыстории;
-        \item моделирование несанкционированного изменения истории: ручная модификация хода в теле журнала без пересчёта хеш-цепочки приводит к немедленной блокировке и фиксации статуса нарушения целостности при аудите.
-    \end{itemize}
-    \item \textbf{Сквозное системное тестирование (End-to-End System Benchmarks, \texttt{test\_system\_benchmark.py}, \texttt{test\_orchestrator.py})}:
-    \begin{itemize}
-        \item полная видеорегистрация эталонной короткой партии (Детский мат, 7 полуходов): проверка перехода от синтетического видеокадра через классификацию, дебаунсинг FSM, скорер и запись на диск до формирования результирующего PGN;
-        \item видеорегистрация партии с полным комплексом специальных ходов ФИДЕ (рокировки $O-O$ и $O-O-O$, взятие на проходе \textit{en passant}, превращение пешки в ферзя $g1=Q$): подтверждение 100\% точности совпадения финальной позиции FEN с эталоном.
-    \end{itemize}
-\end{enumerate}
-
-Сводные результаты тестирования программного комплекса сведены в таблицу~\ref{tab:test-results}.
+Сводные результаты автоматизированного тестирования по функциональным группам модулей представлены в таблице~\ref{tab:test-results}.
 
 \begin{table}[htbp]
 \centering
-\caption{Сводные результаты тестирования компонентов системы}
+\caption{Сводные результаты тестирования подсистем комплекса}
 \label{tab:test-results}
-\begin{tabular}{|>{\raggedright\arraybackslash}p{0.32\textwidth}|>{\centering\arraybackslash}p{0.18\textwidth}|>{\centering\arraybackslash}p{0.18\textwidth}|>{\centering\arraybackslash}p{0.22\textwidth}|}
+\begin{tabular}{|>{\raggedright\arraybackslash}p{0.46\textwidth}|>{\centering\arraybackslash}p{0.14\textwidth}|>{\centering\arraybackslash}p{0.16\textwidth}|>{\raggedright\arraybackslash}p{0.16\textwidth}|}
 \hline
-\textbf{Тестовый модуль} & \textbf{Кол-во тестов} & \textbf{Статус} & \textbf{Время выполнения} \\
+\textbf{Группа тестовых модулей} & \textbf{Кол-во тестов} & \textbf{Статус} & \textbf{Уровень проверки} \\
 \hline
-\texttt{test\_datatypes.py} & 12 & Успешно (100\%) & 0,08 с \\
+Контракты данных и конфигурация (\texttt{test\_datatypes}, \texttt{test\_config}) & 39 & Пройдено & Модульный \\
 \hline
-\texttt{test\_config.py} & 9 & Успешно (100\%) & 0,06 с \\
+Компьютерное зрение и геометрия (\texttt{test\_board\_localizer}, \texttt{test\_homography}, \texttt{test\_corner\_refinement}, \texttt{test\_orientation}, \texttt{test\_motion\_detector}, \texttt{test\_hand\_detector}, \texttt{test\_roi\_extractor}, \texttt{test\_occupancy\_tracker}, \texttt{test\_video\_adapter}, \texttt{test\_diagnostics}) & 75 & Пройдено & Модульный и регрессионный \\
 \hline
-\texttt{test\_board\_localizer.py} & 14 & Успешно (100\%) & 0,42 с \\
+Нейросетевой уровень и обучение (\texttt{test\_piece\_classifier}, \texttt{test\_auto\_labeller}, \texttt{test\_dataset\_split}, \texttt{test\_training\_pipeline}, \texttt{test\_transforms}) & 28 & Пройдено & Модульный \\
 \hline
-\texttt{test\_homography.py} & 16 & Успешно (100\%) & 0,15 с \\
+Логико-символьный решатель и FSM (\texttt{test\_fsm}, \texttt{test\_candidate\_generator}, \texttt{test\_move\_scorer}, \texttt{test\_decision\_gate}, \texttt{test\_game\_state\_manager}, \texttt{test\_reasoning\_e2e}) & 39 & Пройдено & Модульный и интеграционный \\
 \hline
-\texttt{test\_corner\_refinement.py} & 11 & Успешно (100\%) & 0,18 с \\
+Персистентность и анализ Stockfish (\texttt{test\_event\_repository}, \texttt{test\_evidence\_writer}, \texttt{test\_recovery\_manager}, \texttt{test\_stockfish\_worker}, \texttt{test\_engine\_service\_queue}, \texttt{test\_move\_evaluator}, \texttt{test\_persistence\_analysis\_e2e}) & 22 & Пройдено & Отказоустойчивость и UCI \\
 \hline
-\texttt{test\_orientation.py} & 10 & Успешно (100\%) & 0,12 с \\
+Оркестратор, Web API, HUD и CLI (\texttt{test\_orchestrator}, \texttt{test\_orchestrator\_parallax}, \texttt{test\_whole\_board\_and\_audit}, \texttt{test\_visualizer}, \texttt{test\_cli}, \texttt{test\_web\_ui}) & 74 & Пройдено & Интеграционный и E2E \\
 \hline
-\texttt{test\_motion\_detector.py} & 12 & Успешно (100\%) & 0,22 с \\
+Эталонные системные бенчмарки (\texttt{test\_benchmark}, \texttt{test\_system\_benchmark}) & 8 & Пройдено & Сквозной системный \\
 \hline
-\texttt{test\_hand\_detector.py} & 15 & Успешно (100\%) & 0,35 с \\
-\hline
-\texttt{test\_dataset.py} & 8 & Успешно (100\%) & 0,14 с \\
-\hline
-\texttt{test\_piece\_classifier.py} & 14 & Успешно (100\%) & 0,28 с \\
-\hline
-\texttt{test\_fsm.py} & 18 & Успешно (100\%) & 0,31 с \\
-\hline
-\texttt{test\_reasoning.py} & 15 & Успешно (100\%) & 0,26 с \\
-\hline
-\texttt{test\_event\_repository.py} & 14 & Успешно (100\%) & 0,19 с \\
-\hline
-\texttt{test\_recovery.py} & 8 & Успешно (100\%) & 0,11 с \\
-\hline
-\texttt{test\_stockfish\_worker.py} & 12 & Успешно (100\%) & 0,45 с \\
-\hline
-\texttt{test\_async\_engine.py} & 9 & Успешно (100\%) & 1,20 с \\
-\hline
-\texttt{test\_visualizer.py} & 19 & Успешно (100\%) & 0,23 с \\
-\hline
-\texttt{test\_cli.py} & 10 & Успешно (100\%) & 1,56 с \\
-\hline
-\texttt{test\_orchestrator.py} & 7 & Успешно (100\%) & 0,46 с \\
-\hline
-\texttt{test\_system\_benchmark.py} & 2 & Успешно (100\%) & 12,68 с \\
-\hline
-\textbf{Итого} & \textbf{231} & \textbf{Успешно (100\%)} & \textbf{30,55 с} \\
+\textbf{Итого по 38 тестовым файлам} & \textbf{285} & \textbf{100\%} & \textbf{45,46 с} \\
 \hline
 \end{tabular}
 \end{table}
 
 \subsection{Оценка качества, эффективности и объяснимости системы}
 
-Для подтверждения преимуществ предложенной нейро-символьной парадигмы был проведен сравнительный эксперимент трёх альтернативных архитектурных подходов на идентичной выборке тестовых видеозаписей физических шахматных матчей:
+Экспериментальная проверка производительности и качества выполнена в двух режимах: на синтетических сквозных видеопоследовательностях (\texttt{test\_system\_benchmark.py}) и непосредственно внутри рабочего контейнера \texttt{chess-recorder-web} с загруженными квантованными моделями \texttt{ONNX INT8} и движком \texttt{Stockfish~16} на центральном процессоре.
 
-\begin{enumerate}
-    \item \textbf{Подход <<Только зрение>> (Pure Vision)}: система принимает решение о расстановке фигур исключительно на основе поклеточного нейросетевого инференса $\arg\max_c P(c \mid \text{patch}_{sq})$ без учёта предыстории и без проверки легальности по правилам ФИДЕ. При изменении предсказанного набора фигур генерируется ход.
-    \item \textbf{Подход <<Только символьный решатель>> (Pure Symbolic / Blind Rules)}: система отслеживает факт перемещения объектов по оптическому движению и геометрическому центру масс, однако не производит глубокую классификацию типа фигур, пытаясь угадать сделанный ход перебором дерева легальных ходов с равными априорными вероятностями.
-    \item \textbf{Разработанная гибридная интеллектуальная система (Neuro-Symbolic)}: объединение многоголовой свёрточной нейросети классификации клеток с вероятностным байесовским фильтром, FSM-дебаунсингом и строгой символьной валидацией правил FIDE через многофакторный взвешенный скорер $S(m)$.
-\end{enumerate}
-
-Результаты сравнительного анализа приведены в таблице~\ref{tab:paradigm-comparison}.
+Результаты замеров ключевых этапов обработки в живой контейнерной среде приведены в таблице~\ref{tab:paradigm-comparison}.
 
 \begin{table}[htbp]
 \centering
-\caption{Сравнительная оценка качества и надёжности архитектурных подходов}
+\caption{Фактические показатели качества и производительности компонентов в среде исполнения}
 \label{tab:paradigm-comparison}
-\begin{tabular}{|>{\raggedright\arraybackslash}p{0.36\textwidth}|>{\centering\arraybackslash}p{0.18\textwidth}|>{\centering\arraybackslash}p{0.18\textwidth}|>{\centering\arraybackslash}p{0.20\textwidth}|}
+\begin{tabular}{|>{\raggedright\arraybackslash}p{0.34\textwidth}|>{\centering\arraybackslash}p{0.24\textwidth}|>{\raggedright\arraybackslash}p{0.34\textwidth}|}
 \hline
-\textbf{Метрика качества} & \textbf{Только зрение (Pure Vision)} & \textbf{Только правила (Pure Symbolic)} & \textbf{Гибридный ИИ (Разработанная)} \\
+\textbf{Компонент / Метрика} & \textbf{Измеренное значение} & \textbf{Режим исполнения в конвейере} \\
 \hline
-Точность распознавания ходов (Move Accuracy) & 71,4\% & 64,8\% & \textbf{100,0\%} \\
+Точность распознавания синтетических партий (7 и 12 полуходов) & \textbf{100\%} (0 нелегальных ходов) & Сквозной прогон с реальной гомографией и полным циклом FSM \\
 \hline
-Доля сгенерированных нелегальных ходов & 28,6\% & 0,0\% & \textbf{0,0\%} \\
+Точность репроекции 4 углов доски (\texttt{Hough/RANSAC + CornerSubPix}) & RMSE $\le 2{,}0$~пикс. & Запускается при калибровке и восстановлении геометрии \\
 \hline
-Устойчивость к кратковременному перекрытию рукой & Низкая (катастрофические ошибки) & Средняя & \textbf{Абсолютная (дебаунсинг FSM)} \\
+Инференс \texttt{ChessQ-Lite ViT-S14 (INT8)} & $910{,}98$~мс & Событийно при калибровке и финальной верификации хода \\
 \hline
-Распознавание специальных ходов (рокировка, взятие на проходе) & 38,2\% (ошибочно фиксируется исчезновение) & 82,0\% & \textbf{100,0\% (мульти-квадратные сигнатуры)} \\
+Сравнение патчей \texttt{DINOv2-Small (INT8)} & $145{,}77$~мс & С кэшированием опорного кадра $B_t$ после фиксации хода \\
 \hline
-Среднее время обработки одного кадра (CPU) & 18,4 мс & 4,2 мс & \textbf{6,13 мс} \\
-\hline
-Степень объяснимости решений (Explainability) & Нулевая (черный ящик) & Ограниченная & \textbf{Полная (мульти-факторные скоры)} \\
+Анализ позиции \texttt{Stockfish~16 NNUE (depth=12)} & $115{,}19$~мс & Полностью асинхронно в фоновой очереди \\
 \hline
 \end{tabular}
 \end{table}
 
-\textbf{Анализ объяснимости (Explainability)}: В отличие от монолитных end-to-end нейросетевых архитектур, где невозможно понять внутренние причины принятия того или иного решения, разработанная система предоставляет прозрачную численную декомпозицию уверенности для каждого проверяемого хода $m$:
+Такое разделение частоты вызовов принципиально для работы на CPU без дискретного GPU: тяжёлые трансформерные модели (\texttt{ChessQ-Lite} и \texttt{DINOv2}) вызываются только на ключевых стабилизированных кадрах, благодаря чему потоковый цикл захвата, детекции движения и проверки окклюзии рукой сохраняет отзывчивость в реальном времени.
+
+\textbf{Объяснимость (Explainability)}: в отличие от непрозрачных нейросетевых решений <<чёрного ящика>>, разработанная система формирует количественную декомпозицию для каждого кандидата $m$:
 \begin{equation}
 S(m) = w_v \cdot S_v(m) + w_t \cdot S_t(m) + w_g \cdot S_g - w_o \cdot P_o(m).
 \end{equation}
-Для каждого зафиксированного полухода оператор и тренер могут запросить полный лог декомпозиции:
-\begin{itemize}
-    \item $S_v(m)$ показывает, насколько визуальный вид клеток отправления и прибытия соответствует ожидаемым фигурам по данным нейросети;
-    \item $S_t(m)$ фиксирует, насколько стабильной оставалась оптическая картина в течение окна успокоения $\Delta t_{\text{settle}} = 0{,}8$~с;
-    \item $S_g$ отражает качество геометрической проекции (обратная ошибка репроекции углов доски);
-    \item $P_o(m)$ показывает штраф за возможное перекрытие клетки тенью или пальцами игрока.
-\end{itemize}
-
-Благодаря проверке разницы скоров $\Delta = S(m_1) - S(m_2) \ge 0{,}15$, система полностью исключает ложные срабатывания: при недостаточной дифференциации ходов генерируется статус \texttt{UNCERTAIN}, предотвращающий загрязнение протокола партии.
+По каждому полуходу доступны вклады визуальной согласованности $S_v(m)$ (включая оценку зоны основания \textit{Base-Core} и патч-косинусное сходство \texttt{DINOv2}), временной устойчивости $S_t(m)$, геометрической достоверности $S_g$ и штрафа перекрытия рукой $P_o(m)$. При недостаточном запасе уверенности ($\Delta < \tau_{\text{margin}}$) или отсутствии легальных объяснений система воздерживается от искажения протокола, переводя контур в состояние \texttt{UNCERTAIN}.
 
 \subsection{Демонстрация работы гибридной интеллектуальной системы}
 
-Работоспособность системы подтверждена серией сквозных демонстрационных испытаний на различных игровых сценариях:
+Работоспособность системы подтверждена серией сквозных испытаний и интерактивных тестов:
 
 \subsubsection{Сценарий 1: Автоматическая регистрация короткой партии (Детский мат)}
-Партия разыгрывалась белыми фигурами против черных по каноническому тексту: 
-\begin{center}
-\texttt{1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7\# (1-0)}.
-\end{center}
-В процессе демонстрации видеопоток с частотой 30 FPS поступал на вход оркестратора:
+Партия разыгрывалась по тексту \texttt{1. e4 e5 2. Qh5 Nc6 3. Bc4 Nf6 4. Qxf7\# (1-0)}:
 \begin{enumerate}
-    \item на кадрах 1--15 система зафиксировала доску, выполнила калибровку углов и перешла из состояния \texttt{IDLE} через \texttt{CALIBRATING} в \texttt{STABLE};
-    \item при совершении хода \texttt{1. e4} рука игрока внесла оптическое возмущение, FSM перешёл в \texttt{MOVING};
-    \item после убирания руки начался отсчет фазы \texttt{SETTLING} (0,8 с), сменившийся на \texttt{VERIFYING};
-    \item логико-символьный решатель сопоставил визуальные дельты клеток $e2$ и $e4$ с базой легальных ходов, рассчитал скор $S(e2e4) = 0{,}964$ и шлюз решений подтвердил статус \texttt{ACCEPTED};
-    \item аналогично были зарегистрированы все последующие ходы; на ходе \texttt{4. Qxf7\#} символьное ядро зафиксировало шах и мат (Checkmate), FSM перешел в \texttt{STOPPED}, а система автоматически экспортировала валидный файл \texttt{game.pgn}.
+    \item в начале сеанса система локализовала доску, рассчитала матрицу гомографии и перешла из \texttt{IDLE} через \texttt{CALIBRATING} в \texttt{STABLE};
+    \item при совершении хода \texttt{1. e4} возмущение перевело FSM в \texttt{MOVING}, а после стабилизации и выдержки дебаунсинга --- в \texttt{VERIFYING};
+    \item символьный решатель сопоставил изменённые поля $e2, e4$ со множеством легальных ходов ФИДЕ и подтвердил ход;
+    \item на ходе \texttt{4. Qxf7\#} ядро \texttt{python-chess} зафиксировало мат, а \texttt{Stockfish~16} оценил финальную позицию без блокировки интерфейса и без ложной пометки матового хода ошибкой.
 \end{enumerate}
 
-\subsubsection{Сценарий 2: Комплекс специальных ходов FIDE}
-Демонстрация проводилась на фрагменте партии, содержащем:
+\subsubsection{Сценарий 2: Комплекс специальных ходов ФИДЕ}
+В сквозном испытании корректно распознана последовательность из 12 полуходов, включающая:
 \begin{itemize}
-    \item ход пешкой через битое поле \texttt{e5} и последующее взятие на проходе пешки $d5$ белой пешкой $e5$: \texttt{2... d5 3. exd6!}; система корректно зафиксировала освобождение поля $d5$, на котором физически находилась сбитая черная пешка, сопоставив это с правилом \textit{en passant};
-    \item короткую рокировку черных \texttt{5... O-O}: мульти-квадратная сигнатура рокировки (одновременное перемещение короля $e8 \to g8$ и ладьи $f8 \to f8$) была распознана как единое транзакционное действие;
-    \item длинную рокировку белых \texttt{9. O-O-O}: аналогично успешно зафиксировано синхронное перемещение короля $e1 \to c1$ и ладьи $a1 \to d1$;
-    \item превращение проходной пешки на 8-й горизонтали \texttt{58... g1=Q}: классификатор зафиксировал появление черного ферзя на поле $g1$, что было однозначно верифицировано правилами.
+    \item взятие на проходе (\textit{en passant}) с освобождением трёх затронутых полей ($e5, d5, d6$);
+    \item короткую рокировку \texttt{O-O} (синхронное перемещение короля $e8 \to g8$ и ладьи $h8 \to f8$);
+    \item длинную рокировку \texttt{O-O-O} (перемещение короля $e1 \to c1$ и ладьи $a1 \to d1$);
+    \item превращение пешки на 1/8 горизонтали в ферзя.
 \end{itemize}
 
-\subsubsection{Сценарий 3: Физическое перекрытие доски рукой и моделирование помех}
-В процессе партии игрок задержал руку над доской на 4,5 секунды, закрывая центральные поля $d4, d5, e4, e5$, после чего убрал руку без совершения хода:
-\begin{enumerate}
-    \item детектор рук \texttt{HandDetector} поднял флаг \texttt{hand\_detected = True};
-    \item FSM немедленно перешёл в режим \texttt{MOVING};
-    \item после возвращения руки в зону покоя FSM перешёл в \texttt{SETTLING} и \texttt{VERIFYING};
-    \item модуль \texttt{LegalMoveCandidateGenerator} не обнаружил устойчивых изменений в расположении фигур ($\Delta_{\text{visual}} = 0$);
-    \item система зафиксировала ложную тревогу (false alarm) и безаварийно вернулась в состояние \texttt{STABLE} без создания ложной записи хода.
-\end{enumerate}
+\subsubsection{Сценарий 3: Физическое перекрытие доски рукой без хода}
+При задержке руки игрока над центральными полями $d4, d5, e4, e5$ и возврате руки без перестановки фигур детектор рук перевёл FSM в \texttt{MOVING}, затем после очистки сцены и сравнения с опорным кадром $B_t$ визуальные дельты вернулись к нулю, и система безопасно возвратилась в состояние \texttt{STABLE} без ложных записей.
 
 \subsubsection{Сценарий 4: Разрешение неоднозначности оператором (UNCERTAIN)}
-Было сымитировано неоднозначное смещение фигуры на границу соседних клеток ($e2 \to e3/e4$):
+При пограничной оценке двух близких легальных кандидатов (например, \texttt{e2e4} и \texttt{e2e3} при малом запасе $\Delta < 0{,}15$) шлюз решений перевёл FSM в \texttt{UNCERTAIN}, отобразил сворачиваемую панель с ранжированными кандидатами, а после подтверждения оператором через веб-панель ход был атомарно зафиксирован.
+
+\subsubsection{Сценарий 5: Обнаружение и регистрация нелегальной перестановки фигур}
+При намеренном перемещении фигуры с нарушением правил шахмат (например, прыжок белого коня $g1 \to c5$) гибридный конвейер выявил устойчивое изменение клеток на доске при пустом списке согласованных легальных гипотез. Вместо подбора <<ближайшего>> постороннего хода система:
 \begin{enumerate}
-    \item разница скоров между ходами составила $\Delta = |S(e2e4) - S(e2e3)| = 0{,}04 < 0{,}15$;
-    \item шлюз решений выставил статус \texttt{DecisionStatus.UNCERTAIN};
-    \item FSM перешел в режим \texttt{UNCERTAIN}, на экране оператора отобразилось модальное окно с кандидатами: \texttt{[1] e2e4 (score: 0.52)}, \texttt{[2] e2e3 (score: 0.48)};
-    \item оператор нажал клавишу \texttt{1}, ход \texttt{e2e4} был атомарно зафиксирован, после чего система вернулась в рабочий цикл.
+    \item перевела автомат в состояние \texttt{UNCERTAIN} без изменения официальной доски $B_t$;
+    \item записала событие типа \texttt{illegal\_attempt} в \texttt{events.jsonl} с указанием изменённых полей;
+    \item отобразила в веб-панели диагностическое предупреждение с возможностью физического возврата фигур (для автопродолжения) либо ручного ввода допустимого хода UCI.
 \end{enumerate}
 
 \subsection{Анализ ограничений и направления развития}
 
-В ходе экспериментальной апробации прототипа выявлены следующие физические и алгоритмические границы применимости:
-
+Экспериментальная проверка выявила следующие ограничения прототипа:
 \begin{enumerate}
-    \item \textbf{Геометрические ограничения угла обзора камеры}: устойчивая работа алгоритмов локализации и компенсации параллакса обеспечивается при углах наклона оптической оси камеры к плоскости доски в диапазоне $50^\circ \le \theta \le 90^\circ$. При углах наклона менее $50^\circ$ высокие фигуры (ферзь, король) взаимно перекрывают задние горизонтали, вызывая недопустимо высокий уровень оптической окклюзии.
-    \item \textbf{Требования к освещённости игровой зоны}: минимальный уровень освещённости составляет 150 люкс. При резких динамических тенях или глубоких бликах на лакированных деревянных фигурах точность классификации клеток без предварительной калибровки баланса белого может снижаться на 3--5\%.
-    \item \textbf{Зависимость от контрастности полей}: на нестандартных шахматных досках со сплошным однотонным окрашиванием без выраженного контраста между светлыми и темными полями снижается надёжность детекции сетки преобразованием Хафа.
+    \item \textbf{Угол наклона камеры}: надёжная детекция основания клеток обеспечивается при угле наклона $50^\circ \le \theta \le 90^\circ$; при меньших углах высокие фигуры перекрывают задние горизонтали.
+    \item \textbf{Освещённость и контраст}: при резких точечных бликах и однотонных досках без контраста границ точность геометрической сегментации снижается, поэтому рекомендуется первичная ручная корректировка четырёх углов в веб-панели и отказ от чисто яркостной пороговой сегментации в пользу \textit{Base-Core} и \texttt{DINOv2}.
 \end{enumerate}
 
-В качестве ключевых направлений дальнейшего развития проекта выделяются:
-\begin{itemize}
-    \item перенос нейросетевых моделей на микрокомпьютеры граничных вычислений (Raspberry Pi 5, NVIDIA Jetson Orin Nano) для создания полностью автономного моноблочного регистратора, встраиваемого в турнирные столы;
-    \item разработка мобильного приложения-компаньона для смартфонов на базе iOS и Android;
-    \item интеграция с устройствами дополненной реальности (AR-очками), обеспечивающими проецирование оценки Stockfish и стрелок лучших ходов непосредственно на физическую доску в поле зрения тренера.
-\end{itemize}
+Направления развития включают адаптацию под одноплатные вычислители (\texttt{Raspberry~Pi~5}, \texttt{Jetson~Orin~Nano}) и расширение дообучения трансформерного классификатора на сложных турнирных наборах деревянных и пластиковых фигур.
 
 \subsection{Выводы по разделу 3}
 
-В результате выполнения третьего этапа выпускной квалификационной работы:
+В результате выполнения третьего этапа курсовой работы:
 \begin{enumerate}
-    \item Полностью реализован программный комплекс гибридной интеллектуальной системы автономной видеорегистрации шахматных партий, объединяющий алгоритмы компьютерного зрения, глубокие свёрточные сети инференса клеток, FSM-дебаунсер, логико-символьный верификатор правил FIDE, транзакционный репозиторий и подсистему компьютерного анализа Stockfish 16 UCI.
-    \item Разработан удобный двухуровневый интерфейс: полнофункциональный CLI (\texttt{record}, \texttt{audit}, \texttt{replay}, \texttt{benchmark}) и интерактивный визуальный экран оператора на базе OpenCV HighGUI с наложением сетки полей, 2D-доской, FSM-статусами и шкалой преимущества.
-    \item Проведен комплексный цикл тестирования, включающий 231 тест, покрывающий компонентный, интеграционный, стрессовый и сквозной уровни со 100\% успешностью прохождения.
-    \item Экспериментально доказано подавляющее преимущество разработанной нейро-символьной архитектуры перед изолированными подходами: достигнута 100\% точность регистрации ходов при нулевой доле нелегальных ходов и средней задержке инференса 6,13~мс на один кадр на стандартном CPU.
+    \item Полностью реализован программный комплекс гибридной интеллектуальной системы видеорегистрации шахматных партий, объединяющий алгоритмы компьютерного зрения, квантованные модели \texttt{ChessQ-Lite ViT-S14} и \texttt{DINOv2}, детекцию рук MediaPipe, FSM-дебаунсер, верификатор правил ФИДЕ, транзакционный SHA-256 репозиторий и асинхронный движок \texttt{Stockfish~16}.
+    \item Разработан трёхуровневый пользовательский интерфейс: интерактивная веб-панель оператора на \texttt{FastAPI / WebSocket / MJPEG} с калибровкой углов, пошаговым просмотром и диагностикой нелегальных ходов, локальный OpenCV HUD и CLI.
+    \item По итогам 6-агентного аудита кодовой базы устранены выявленные дефекты синхронизации, персистентности и локализации; весь комплекс из 285 автоматических тестов выполнен со 100\% успешностью.
+    \item На живом контейнере \texttt{chess-recorder-web} подтверждена работоспособность всех контуров и измерены фактические задержки CPU-инференса ключевых моделей.
 \end{enumerate}

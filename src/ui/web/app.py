@@ -92,106 +92,114 @@ def get_state_payload(
     transcribe_status: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """Serializes authoritative orchestrator and board state into a JSON dictionary."""
-    board = orchestrator.state_manager.current_board
-    turn = "white" if board.turn == chess.WHITE else "black"
-    is_check = board.is_check()
-    is_game_over = board.is_game_over()
-    result = board.result() if is_game_over else "*"
-    fsm_state = orchestrator.fsm.current_state.value
-    history = orchestrator.state_manager.history
+    from contextlib import nullcontext
 
-    move_history: List[Dict[str, Any]] = [
-        {
-            "ply": m.ply,
-            "san": m.move_san,
-            "uci": m.move_uci,
-            "fen_after": m.fen_after,
-        }
-        for m in history
-    ]
-    last_move = (
-        {"ply": history[-1].ply, "san": history[-1].move_san, "uci": history[-1].move_uci}
-        if history else None
-    )
+    state_lock = getattr(orchestrator, "_lock", None)
+    if state_lock is None or not hasattr(state_lock, "__enter__") or type(state_lock).__module__.startswith("unittest.mock"):
+        ctx = nullcontext()
+    else:
+        ctx = state_lock
+    with ctx:
+        board = orchestrator.state_manager.current_board
+        turn = "white" if board.turn == chess.WHITE else "black"
+        is_check = board.is_check()
+        is_game_over = board.is_game_over()
+        result = board.result() if is_game_over else "*"
+        fsm_state = orchestrator.fsm.current_state.value
+        history = list(orchestrator.state_manager.history)
 
-    eval_dict: Optional[Dict[str, Any]] = None
-    if orchestrator._latest_eval is not None:
-        ev = orchestrator._latest_eval.eval_after
-        eval_dict = {
-            "score_cp": ev.eval_cp if ev is not None else None,
-            "mate_in": ev.mate_in if ev is not None else None,
-            "depth": ev.depth if ev is not None else 0,
-            "best_move": ev.best_move_uci if ev is not None else None,
-            "quality": orchestrator._latest_eval.quality.value if orchestrator._latest_eval.quality else None,
-        }
-
-    candidates: List[Dict[str, Any]] = []
-    last_decision = orchestrator.fsm.last_decision or orchestrator._last_decision
-    if orchestrator._active_uncertainty and last_decision is not None:
-        hypos = last_decision.top_hypotheses
-        if not hypos and last_decision.accepted_hypothesis:
-            hypos = [last_decision.accepted_hypothesis]
-        candidates = [
+        move_history: List[Dict[str, Any]] = [
             {
-                "rank": idx + 1,
-                "uci": h.move_uci,
-                "san": h.move_san or h.move_uci,
-                "score": round(float(h.total_score), 3),
+                "ply": m.ply,
+                "san": m.move_san,
+                "uci": m.move_uci,
+                "fen_after": m.fen_after,
             }
-            for idx, h in enumerate(hypos)
+            for m in history
         ]
+        last_move = (
+            {"ply": history[-1].ply, "san": history[-1].move_san, "uci": history[-1].move_uci}
+            if history else None
+        )
 
-    board_corners: Optional[List[List[float]]] = None
-    if orchestrator._board_geometry is not None and orchestrator._board_geometry.corners:
-        board_corners = [
-            [
-                round(float(c[0] if isinstance(c, (tuple, list)) else c.x), 1),
-                round(float(c[1] if isinstance(c, (tuple, list)) else c.y), 1),
+        eval_dict: Optional[Dict[str, Any]] = None
+        if orchestrator._latest_eval is not None:
+            ev = orchestrator._latest_eval.eval_after
+            eval_dict = {
+                "score_cp": ev.eval_cp if ev is not None else None,
+                "mate_in": ev.mate_in if ev is not None else None,
+                "depth": ev.depth if ev is not None else 0,
+                "best_move": ev.best_move_uci if ev is not None else None,
+                "quality": orchestrator._latest_eval.quality.value if orchestrator._latest_eval.quality else None,
+            }
+
+        candidates: List[Dict[str, Any]] = []
+        last_decision = orchestrator.fsm.last_decision or orchestrator._last_decision
+        if orchestrator._active_uncertainty and last_decision is not None:
+            hypos = last_decision.top_hypotheses
+            if not hypos and last_decision.accepted_hypothesis:
+                hypos = [last_decision.accepted_hypothesis]
+            candidates = [
+                {
+                    "rank": idx + 1,
+                    "uci": h.move_uci,
+                    "san": h.move_san or h.move_uci,
+                    "score": round(float(h.total_score), 3),
+                }
+                for idx, h in enumerate(hypos)
             ]
-            for c in orchestrator._board_geometry.corners
-        ]
 
-    payload: Dict[str, Any] = {
-        "type": "gameState",
-        "session_id": orchestrator.session_id,
-        "initial_fen": orchestrator.state_manager._initial_fen,
-        "fen": orchestrator.state_manager.current_fen,
-        "turn": turn,
-        "ply": orchestrator.state_manager.ply,
-        "is_check": is_check,
-        "is_game_over": is_game_over,
-        "result": result,
-        "fsm_state": fsm_state,
-        "is_paused": orchestrator._is_paused,
-        "active_uncertainty": orchestrator._active_uncertainty,
-        "illegal_attempts": getattr(orchestrator, "_illegal_attempts_count", 0),
-        "uncertainty_reason": (
-            last_decision.rejection_reason
-            if (orchestrator._active_uncertainty and last_decision is not None)
-            else None
-        ),
-        "uncertain_squares": (
-            list(last_decision.uncertain_squares)
-            if (orchestrator._active_uncertainty and last_decision is not None)
-            else []
-        ),
-        "uncertain_candidates": candidates,
-        "fps": round(float(orchestrator._current_fps), 1),
-        "board_detected": orchestrator._board_geometry is not None,
-        "board_orientation": orchestrator._orientation.value,
-        "board_corners": board_corners,
-        "last_move": last_move,
-        "move_history": move_history,
-        "engine_eval": eval_dict,
-        "white_player": orchestrator.white_player,
-        "black_player": orchestrator.black_player,
-        "video_source": video_source or str(orchestrator.config.camera.source_path),
-    }
-    if recording_status is not None:
-        payload["video_recording"] = recording_status
-    if transcribe_status is not None:
-        payload["video_transcription"] = transcribe_status
-    return payload
+        board_corners: Optional[List[List[float]]] = None
+        if orchestrator._board_geometry is not None and orchestrator._board_geometry.corners:
+            board_corners = [
+                [
+                    round(float(c[0] if isinstance(c, (tuple, list)) else c.x), 1),
+                    round(float(c[1] if isinstance(c, (tuple, list)) else c.y), 1),
+                ]
+                for c in orchestrator._board_geometry.corners
+            ]
+
+        payload: Dict[str, Any] = {
+            "type": "gameState",
+            "session_id": orchestrator.session_id,
+            "initial_fen": orchestrator.state_manager._initial_fen,
+            "fen": orchestrator.state_manager.current_fen,
+            "turn": turn,
+            "ply": orchestrator.state_manager.ply,
+            "is_check": is_check,
+            "is_game_over": is_game_over,
+            "result": result,
+            "fsm_state": fsm_state,
+            "is_paused": orchestrator._is_paused,
+            "active_uncertainty": orchestrator._active_uncertainty,
+            "illegal_attempts": getattr(orchestrator, "_illegal_attempts_count", 0),
+            "uncertainty_reason": (
+                last_decision.rejection_reason
+                if (orchestrator._active_uncertainty and last_decision is not None)
+                else None
+            ),
+            "uncertain_squares": (
+                list(last_decision.uncertain_squares)
+                if (orchestrator._active_uncertainty and last_decision is not None)
+                else []
+            ),
+            "uncertain_candidates": candidates,
+            "fps": round(float(orchestrator._current_fps), 1),
+            "board_detected": orchestrator._board_geometry is not None,
+            "board_orientation": orchestrator._orientation.value,
+            "board_corners": board_corners,
+            "last_move": last_move,
+            "move_history": move_history,
+            "engine_eval": eval_dict,
+            "white_player": orchestrator.white_player,
+            "black_player": orchestrator.black_player,
+            "video_source": video_source or str(orchestrator.config.camera.source_path),
+        }
+        if recording_status is not None:
+            payload["video_recording"] = recording_status
+        if transcribe_status is not None:
+            payload["video_transcription"] = transcribe_status
+        return payload
 
 
 def _infer_source_type(src: str, explicit_type: Optional[str] = None) -> str:
@@ -201,7 +209,7 @@ def _infer_source_type(src: str, explicit_type: Optional[str] = None) -> str:
         return "synthetic"
     if src.isdigit() or src.startswith("/dev/video"):
         return "device"
-    if src.startswith("rtsp://") or src.startswith("http://"):
+    if src.startswith("rtsp://") or src.startswith("http://") or src.startswith("https://"):
         return "rtsp"
     return "file"
 
@@ -239,6 +247,7 @@ def create_web_app(
     transcriber = VideoTranscriptionManager(base_config=orchestrator.config)
 
     source_lock = threading.RLock()
+    read_lock = threading.Lock()
     adapter_state: Dict[str, Any] = {
         "adapter": video_adapter,
         "source": str(orchestrator.config.camera.source_path),
@@ -280,23 +289,33 @@ def create_web_app(
         try:
             while not stop_event.is_set():
                 t0 = time.perf_counter()
-                with source_lock:
-                    cur_adapter: Optional[BaseVideoAdapter] = adapter_state["adapter"]
-                    is_eof = adapter_state["eof"]
+                with read_lock:
+                    with source_lock:
+                        cur_adapter = adapter_state["adapter"]
+                        is_eof = adapter_state["eof"]
+                    if cur_adapter is None or not cur_adapter.is_opened() or is_eof:
+                        frame = None
+                        nominal_fps = 10.0
+                        need_sleep = True
+                    else:
+                        need_sleep = False
+                        nominal_fps = cur_adapter.get_fps()
+                        frame = cur_adapter.read()
+                        if frame is None:
+                            with source_lock:
+                                if adapter_state["adapter"] is cur_adapter:
+                                    adapter_state["eof"] = True
+                            if recorder.is_recording():
+                                recorder.stop()
+                            logger.info("Video stream reached end of file or closed.")
 
-                if cur_adapter is None or not cur_adapter.is_opened() or is_eof:
+                if need_sleep:
                     time.sleep(0.1)
                     continue
 
-                nominal_fps = cur_adapter.get_fps()
                 delay = 1.0 / max(1.0, nominal_fps) if nominal_fps > 0 else 0.033
-
-                frame = cur_adapter.read()
                 if frame is None:
-                    with source_lock:
-                        if adapter_state["adapter"] is cur_adapter:
-                            adapter_state["eof"] = True
-                    logger.info("Video stream reached end of file or closed.")
+                    time.sleep(0.1)
                     continue
 
                 # Write raw BGR camera frame if operator started video recording
@@ -370,10 +389,12 @@ def create_web_app(
             recorder.stop()
         if worker_thread is not None and worker_thread.is_alive():
             worker_thread.join(timeout=2.0)
-        with source_lock:
-            cur_adapter = adapter_state["adapter"]
-            if cur_adapter is not None:
-                cur_adapter.release()
+        with read_lock:
+            with source_lock:
+                cur_adapter = adapter_state["adapter"]
+                adapter_state["adapter"] = None
+                if cur_adapter is not None:
+                    cur_adapter.release()
 
     app = FastAPI(
         title="Chess Game Recording System - Web Dashboard",
@@ -522,9 +543,9 @@ def create_web_app(
             auto_accept_top=req.auto_accept_top,
             candidate_index=req.candidate_index,
         )
-        await ws.broadcast(build_full_state())
         if not resolved:
             raise HTTPException(status_code=400, detail="Failed to resolve uncertainty with provided parameters")
+        await ws.broadcast(build_full_state())
         return {"success": True}
 
     # -------------------------------------------------------------------------
@@ -582,12 +603,17 @@ def create_web_app(
             cur_adapter = adapter_state["adapter"]
             cur_source = adapter_state["source"]
             opened = bool(cur_adapter is not None and cur_adapter.is_opened())
-        devices = discover_video_devices(active_source=cur_source, active_opened=opened)
+        devices = await asyncio.to_thread(
+            discover_video_devices,
+            active_source=cur_source,
+            active_opened=opened,
+        )
         return {"devices": devices, "active_source": cur_source}
 
     @app.post("/api/video/source")
     async def api_switch_video_source(req: SwitchVideoSourcePayload):
         """Hot-swaps the active video source (camera index/device/file)."""
+        nonlocal worker_thread
         src = req.source.strip()
         if not src:
             raise HTTPException(status_code=400, detail="Video source cannot be empty")
@@ -605,42 +631,47 @@ def create_web_app(
             rotate=orchestrator.config.camera.rotate,
         )
 
-        # Release current adapter before re-opening device if same or overlapping V4L2 node
-        with source_lock:
-            old_adapter: Optional[BaseVideoAdapter] = adapter_state["adapter"]
-            prev_source = adapter_state["source"]
-            adapter_state["adapter"] = None
-            if old_adapter is not None:
-                try:
-                    old_adapter.release()
-                except Exception:
-                    pass
+        # Acquire read_lock before releasing/opening V4L2 device so worker_loop never reads a released handle
+        with read_lock:
+            with source_lock:
+                old_adapter: Optional[BaseVideoAdapter] = adapter_state["adapter"]
+                prev_source = adapter_state["source"]
+                adapter_state["adapter"] = None
+                if old_adapter is not None:
+                    try:
+                        old_adapter.release()
+                    except Exception:
+                        pass
 
-            try:
-                new_adapter = create_video_adapter(new_cfg)
-            except Exception as exc:
-                # Best-effort recovery of previous source so UI stream does not stay dead
                 try:
-                    fallback_cfg = CameraConfig(
-                        source_type=_infer_source_type(prev_source),
-                        source_path=prev_source,
-                        width=orchestrator.config.camera.width,
-                        height=orchestrator.config.camera.height,
-                        fps=orchestrator.config.camera.fps,
-                        rotate=orchestrator.config.camera.rotate,
-                    )
-                    adapter_state["adapter"] = create_video_adapter(fallback_cfg)
-                    adapter_state["eof"] = False
-                except Exception:
-                    pass
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Could not open video source '{src}': {exc}",
-                ) from exc
+                    new_adapter = create_video_adapter(new_cfg)
+                except Exception as exc:
+                    # Best-effort recovery of previous source so UI stream does not stay dead
+                    try:
+                        fallback_cfg = CameraConfig(
+                            source_type=_infer_source_type(prev_source),
+                            source_path=prev_source,
+                            width=orchestrator.config.camera.width,
+                            height=orchestrator.config.camera.height,
+                            fps=orchestrator.config.camera.fps,
+                            rotate=orchestrator.config.camera.rotate,
+                        )
+                        adapter_state["adapter"] = create_video_adapter(fallback_cfg)
+                        adapter_state["eof"] = False
+                    except Exception:
+                        pass
+                    raise HTTPException(
+                        status_code=400,
+                        detail=f"Could not open video source '{src}': {exc}",
+                    ) from exc
 
-            adapter_state["adapter"] = new_adapter
-            adapter_state["source"] = src
-            adapter_state["eof"] = False
+                adapter_state["adapter"] = new_adapter
+                adapter_state["source"] = src
+                adapter_state["eof"] = False
+
+        if start_worker and (worker_thread is None or not worker_thread.is_alive()) and not stop_event.is_set():
+            worker_thread = threading.Thread(target=worker_loop, name="WebVideoWorker", daemon=True)
+            worker_thread.start()
 
         orchestrator.config.camera.source_path = src
         orchestrator.config.camera.source_type = src_type
@@ -693,7 +724,7 @@ def create_web_app(
     @app.get("/api/videos")
     async def api_list_videos():
         """Lists recorded and uploaded videos available for download or move decoding."""
-        videos = list_available_videos(base_sessions_dir, recordings_dir)
+        videos = await asyncio.to_thread(list_available_videos, base_sessions_dir, recordings_dir)
         for v in videos:
             v["download_url"] = f"/api/videos/download?path={urllib.parse.quote(v['path'])}"
         return {"videos": videos}
@@ -707,7 +738,11 @@ def create_web_app(
             recordings_dir.resolve(),
             Path("data/benchmark_videos").resolve(),
         ]
-        if not any(target.is_relative_to(root) for root in allowed_roots) or not target.is_file():
+        if (
+            not any(target.is_relative_to(root) for root in allowed_roots)
+            or target.suffix.lower() not in VIDEO_EXTENSIONS
+            or not target.is_file()
+        ):
             raise HTTPException(status_code=404, detail="Video file not found")
         return FileResponse(path=str(target), filename=target.name)
 
@@ -731,7 +766,7 @@ def create_web_app(
                         total_bytes += len(chunk)
                         if total_bytes > MAX_UPLOAD_BYTES:
                             raise HTTPException(status_code=413, detail="Uploaded file exceeds 4 GB limit")
-                        f.write(chunk)
+                        await asyncio.to_thread(f.write, chunk)
         except Exception:
             dest_path.unlink(missing_ok=True)
             raise
@@ -758,6 +793,8 @@ def create_web_app(
         ]
         if not any(video_path.is_relative_to(root) for root in allowed_roots):
             raise HTTPException(status_code=400, detail="Video path outside allowed directories")
+        if video_path.suffix.lower() not in VIDEO_EXTENSIONS:
+            raise HTTPException(status_code=400, detail=f"Unsupported video format: {video_path.suffix}")
         if not video_path.is_file():
             raise HTTPException(status_code=404, detail=f"Video file not found: {req.video_path}")
 

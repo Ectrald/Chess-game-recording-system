@@ -176,3 +176,155 @@ def test_orchestrator_propagates_geometry_conf_and_motion_level(tmp_path: Path):
     assert 0.0 < orch._last_observation.geometry_confidence <= 1.0
     assert all(0.0 <= c.occlusion_ratio <= 1.0 and c.motion_level >= 0.0 for c in orch._last_observation.cells.values())
     orch.stop()
+
+
+def test_illegal_piece_teleport_blocks_fake_candidates_and_logs_illegal():
+    """Moving a knight or king illegally across the board must return UNCERTAIN with empty fake candidates."""
+    from src.reasoning.candidate_generator import LegalMoveCandidateGenerator
+    from src.reasoning.decision_gate import DecisionGate
+    from src.reasoning.scorer import MoveScorer
+
+    board = chess.Board()
+    obs = BoardObservation.create_default(timestamp=1.0, frame_id=10, geometry_confidence=1.0)
+    # Build board matching starting position EXCEPT knight moved illegally g1 -> c5
+    for sq in CHESS_SQUARES:
+        sq_idx = chess.parse_square(sq)
+        piece = board.piece_at(sq_idx)
+        cls_name = "empty" if piece is None else f"{'w' if piece.color else 'b'}{piece.symbol().upper()}"
+        if sq == "g1":
+            cls_name = "empty"
+        elif sq == "c5":
+            cls_name = "wN"
+        probs = {c: (0.97 if c == cls_name else 0.0025) for c in PIECE_CLASSES}
+        obs.cells[sq] = CellObservation(
+            square=sq,
+            probabilities=probs,
+            predicted_piece=cls_name,
+            confidence=0.97,
+            is_occupied=(cls_name != "empty"),
+            is_occluded=False,
+        )
+
+    gen = LegalMoveCandidateGenerator()
+    scorer = MoveScorer()
+    gate = DecisionGate()
+    ranked = scorer.rank_candidates(board, gen.generate_candidates(board, obs), obs)
+    dec = gate.evaluate(ranked, obs)
+    assert dec.status != "accepted"
+    assert dec.accepted_hypothesis is None
+    assert dec.top_hypotheses == []
+
+
+def test_audit_regressions_classifier_recovery_and_replay(tmp_path: Path) -> None:
+    """Verifies fixes for probability mapping, DINOv2 signature/reset, tail recovery, rollback audit, and Stockfish fallback."""
+    from src.analysis.move_evaluator import MoveEvaluator
+    from src.analysis.stockfish_worker import StockfishUCIWorker
+    from src.core.config import AnalysisConfig
+    from src.core.datatypes import EngineEvaluation, MoveEvent
+    from src.ml.piece_classifier import DINOv2PatchChangeDetector, probabilities_to_cell_observation
+    from src.persistence.event_repository import JSONLEventRepository
+    from src.persistence.recovery_manager import RecoveryManager
+    from src.ui.cli import build_parser, cmd_replay
+
+    # 1. Split probability mass when occupied -> must pick highest piece class, never 'empty'
+    split_probs = np.zeros(13, dtype=np.float32)
+    split_probs[0] = 0.45  # empty
+    split_probs[1] = 0.30  # wP
+    split_probs[5] = 0.25  # wQ
+    obs_split = probabilities_to_cell_observation("e4", split_probs, occupancy_threshold=0.50)
+    assert obs_split.is_occupied is True
+    assert obs_split.predicted_piece == "wP"
+
+    # Mild sum drift should renormalize linearly rather than flattening with softmax
+    drift_probs = np.zeros(13, dtype=np.float32)
+    drift_probs[0] = 0.05
+    drift_probs[2] = 0.90  # wN
+    obs_drift = probabilities_to_cell_observation("b1", drift_probs, occupancy_threshold=0.50)
+    assert obs_drift.predicted_piece == "wN"
+    assert obs_drift.confidence > 0.90
+
+    # 2. DINOv2 _image_sig sensitivity and reset()
+    img1 = np.zeros((160, 160, 3), dtype=np.uint8)
+    img2 = img1.copy()
+    img2[20:40, 20:40] = 200
+    assert DINOv2PatchChangeDetector._image_sig(img1) != DINOv2PatchChangeDetector._image_sig(img2)
+    dino = DINOv2PatchChangeDetector(model_path="models/nonexistent.onnx")
+    dino.reset()
+
+    # 3. RecoveryManager sanitize_corrupted_tail with blank lines & partial JSON + cmd_replay with rollback
+    sess_dir = tmp_path / "sess"
+    repo = JSONLEventRepository(session_dir=sess_dir, sync_to_disk=False)
+    ev1 = MoveEvent(
+        ply=1,
+        fen_before=chess.STARTING_FEN,
+        move_uci="e2e4",
+        move_san="e4",
+        fen_after="rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+        confidence=0.95,
+        timestamp=1.0,
+        evidence_frame_id=10,
+    )
+    repo.append_event(ev1)
+    repo.append_event(
+        MoveEvent(
+            event_type="illegal_attempt",
+            ply=1,
+            fen_before=ev1.fen_after,
+            move_uci="0000",
+            move_san="ILLEGAL:c5,g1",
+            fen_after=ev1.fen_after,
+            confidence=0.0,
+            timestamp=2.0,
+            evidence_frame_id=20,
+        )
+    )
+    repo.append_event(
+        MoveEvent(
+            event_type="rollback",
+            ply=1,
+            fen_before=ev1.fen_after,
+            move_uci="e2e4",
+            move_san="e4",
+            fen_after=chess.STARTING_FEN,
+            confidence=1.0,
+            timestamp=3.0,
+            evidence_frame_id=25,
+        )
+    )
+    with repo.file_path.open("ab") as f:
+        f.write(b"\n{\"corrupt\": true}\n{\"partial\": ")
+
+    rec = RecoveryManager(sess_dir)
+    trimmed = rec.sanitize_corrupted_tail()
+    assert trimmed > 0
+    mgr, active = rec.recover_session()
+    assert mgr.ply == 0
+    assert active == []
+
+    args = build_parser().parse_args(["replay", str(repo.file_path), "--delay", "0"])
+    assert cmd_replay(args) == 0
+
+    # 4. StockfishUCIWorker mock fallback remains usable even after close()
+    worker = StockfishUCIWorker(AnalysisConfig(stockfish_path="/nonexistent/stockfish"))
+    worker.close()
+    eval_res = worker.evaluate(chess.Board(), depth=2, timeout_sec=0.5)
+    assert eval_res.eval_cp is not None
+
+    # 5. Checkmate delivered (mate_in=0) must not be classified as blunder
+    ev_mate = MoveEvent(
+        ply=1,
+        fen_before=chess.STARTING_FEN,
+        move_uci="e2e4",
+        move_san="e4",
+        fen_after=chess.STARTING_FEN,
+        confidence=1.0,
+        timestamp=1.0,
+        evidence_frame_id=1,
+    )
+    ar = MoveEvaluator().evaluate_move(
+        ev_mate,
+        EngineEvaluation(eval_cp=100, best_move_uci="e2e4"),
+        EngineEvaluation(mate_in=0),
+    )
+    assert ar.is_blunder is False
+    assert ar.eval_loss_cp == 0

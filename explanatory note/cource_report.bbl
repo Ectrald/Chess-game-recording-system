@@ -1,4 +1,4 @@
-\begin{thebibliography}{1}
+\begin{thebibliography}{10}
 \def\selectlanguageifdefined#1{
 \expandafter\ifx\csname date#1\endcsname\relax
 \else\language\csname l@#1\endcsname\fi}
@@ -24,6 +24,15 @@
 \newblock 800~P. \BibUrl{
   https://mitpress.mit.edu/9780262035613/deep-learning/}.
 
+\bibitem{Wolflein2021}
+\selectlanguageifdefined{english}
+\BibEmph{W{\"o}lflein,~Georg}. Determining Chess Game State from an Image~/
+  Georg~W{\"o}lflein, Ognjen~Arandjelovi{\'c}~// \BibEmph{Journal of Imaging}.
+  ---
+\newblock 2021. ---
+\newblock Vol.~7, no.~6. ---
+\newblock 94~P. \BibUrl{ https://doi.org/10.3390/jimaging7060094}.
+
 \bibitem{Garcez2008}
 \selectlanguageifdefined{english}
 \BibEmph{d'Avila Garcez,~Artur~S.} Neural-Symbolic Cognitive Reasoning~/
@@ -31,6 +40,39 @@
 \newblock Berlin, Heidelberg~: Springer, 2008. ---
 \newblock 198~P. \BibUrl{
   https://link.springer.com/book/10.1007/978-3-540-73246-4}.
+
+\bibitem{Bradski2000}
+\selectlanguageifdefined{english}
+\BibEmph{Bradski,~Gary}. The OpenCV Library~/ Gary~Bradski~// \BibEmph{Dr.
+  Dobb's Journal of Software Tools}. ---
+\newblock 2000. ---
+\newblock Vol.~25, no.~11. ---
+\newblock Pp.~120--125. \BibUrl{ https://docs.opencv.org/}.
+
+\bibitem{Dosovitskiy2021}
+\selectlanguageifdefined{english}
+An Image is Worth 16x16 Words: Transformers for Image Recognition at Scale~/
+  Alexey~Dosovitskiy [et~al.]~// International Conference on Learning
+  Representations (ICLR). ---
+\newblock 2021. \BibUrl{ https://arxiv.org/abs/2010.11929}.
+
+\bibitem{Oquab2024}
+\selectlanguageifdefined{english}
+DINOv2: Learning Robust Visual Features without Supervision~/ Maxime~Oquab
+  [et~al.]~// \BibEmph{Transactions on Machine Learning Research (TMLR)}. ---
+\newblock 2024. \BibUrl{ https://arxiv.org/abs/2304.07193}.
+
+\bibitem{Lugaresi2019}
+\selectlanguageifdefined{english}
+MediaPipe: A Framework for Perceiving and Processing Reality~/ Camillo~Lugaresi
+  [et~al.]~// Third Workshop on Computer Vision for AR/VR at CVPR. ---
+\newblock 2019. \BibUrl{ https://arxiv.org/abs/1906.08172}.
+
+\bibitem{Fiekas2024}
+\selectlanguageifdefined{english}
+\BibEmph{Fiekas,~Niklas}. python-chess: A Chess Library for Python with Move
+  Generation, Validation and PGN/FEN Support. ---
+\newblock 2024. \BibUrl{ https://python-chess.readthedocs.io/en/latest/}.
 
 \bibitem{FIDE2023}
 \selectlanguageifdefined{english}
@@ -47,5 +89,35 @@
 \newblock 1950. ---
 \newblock Vol.~41, no. 314. ---
 \newblock Pp.~256--275. \BibUrl{ https://doi.org/10.1080/14786445008521796}.
+
+\bibitem{Romstad2024}
+\selectlanguageifdefined{english}
+\BibEmph{Romstad,~Tord}. Stockfish: Open Source Chess Engine. ---
+\newblock 2024. \BibUrl{ https://stockfishchess.org/}.
+
+\bibitem{Fischler1981}
+\selectlanguageifdefined{english}
+\BibEmph{Fischler,~Martin~A.} Random Sample Consensus: A Paradigm for Model
+  Fitting with Applications to Image Analysis and Automated Cartography~/
+  Martin~A.~Fischler, Robert~C.~Bolles~// \BibEmph{Communications of the ACM}.
+  ---
+\newblock 1981. ---
+\newblock Vol.~24, no.~6. ---
+\newblock Pp.~381--395. \BibUrl{ https://doi.org/10.1145/358669.358692}.
+
+\bibitem{ONNXRuntime2021}
+\selectlanguageifdefined{english}
+\BibEmph{{Microsoft Corporation}}. ONNX Runtime: Cross-Platform, High
+  Performance ML Inferencing and Training Accelerator. ---
+\newblock 2021. \BibUrl{ https://onnxruntime.ai/}.
+
+\bibitem{Paszke2019}
+\selectlanguageifdefined{english}
+PyTorch: An Imperative Style, High-Performance Deep Learning Library~/
+  Adam~Paszke [et~al.]~// Advances in Neural Information Processing Systems
+  (NeurIPS). ---
+\newblock Vol.~32. ---
+\newblock 2019. ---
+\newblock Pp.~8024--8035. \BibUrl{ https://pytorch.org/}.
 
 \end{thebibliography}

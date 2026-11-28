@@ -150,14 +150,15 @@ class GameStateManager:
                 event.move_uci,
                 event.fen_after,
             )
+            cb = self.on_move_committed
 
-            if self.on_move_committed:
-                try:
-                    self.on_move_committed(event)
-                except Exception as exc:
-                    logger.error("Error in on_move_committed callback: %s", exc, exc_info=True)
+        if cb:
+            try:
+                cb(event)
+            except Exception as exc:
+                logger.error("Error in on_move_committed callback: %s", exc, exc_info=True)
 
-            return event
+        return event
 
     def manual_commit(
         self,
@@ -173,6 +174,8 @@ class GameStateManager:
         Returns:
             Committed MoveEvent.
         """
+        from src.reasoning.candidate_generator import LegalMoveCandidateGenerator
+
         with self._lock:
             # Validate move syntax
             try:
@@ -204,11 +207,13 @@ class GameStateManager:
             else:
                 obs = observation
 
+            changed_sqs = LegalMoveCandidateGenerator().get_affected_squares(self._board, move)
+
             # Construct synthetic hypothesis
             hypo = MoveHypothesis(
                 move_uci=move_uci,
                 move_san=None,
-                changed_squares=[chess.square_name(move.from_square), chess.square_name(move.to_square)],
+                changed_squares=changed_sqs,
                 score_visual=1.0,
                 score_temporal=1.0,
                 score_geometry=1.0,

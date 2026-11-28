@@ -7,6 +7,7 @@ Isolates computer vision inference from underlying capture sources
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+import math
 from pathlib import Path
 from typing import Iterator, Optional, Union
 import cv2
@@ -78,24 +79,31 @@ class OpenCVVideoAdapter(BaseVideoAdapter):
 
     def _open(self) -> None:
         source: Union[int, str] = self.config.source_path
-        # Try converting numeric string to camera index (e.g. "0" -> 0)
-        if isinstance(source, str) and source.isdigit():
-            source = int(source)
+        is_device = self.config.source_type.lower() == "device"
+        # Try converting numeric string or /dev/videoN to camera index for V4L2 property configuration
+        if isinstance(source, str):
+            if source.isdigit():
+                source = int(source)
+                is_device = True
+            elif source.startswith("/dev/video"):
+                is_device = True
 
         self._cap = cv2.VideoCapture(source)
         if not self._cap.isOpened():
+            self._cap.release()
+            self._cap = None
             raise VideoSourceError(f"Failed to open video source: '{self.config.source_path}'")
 
         # Configure camera resolution if device
-        if isinstance(source, int):
+        if isinstance(source, int) or is_device:
             self._cap.set(cv2.CAP_PROP_FRAME_WIDTH, self.config.width)
             self._cap.set(cv2.CAP_PROP_FRAME_HEIGHT, self.config.height)
             if self.config.fps > 0:
                 self._cap.set(cv2.CAP_PROP_FPS, self.config.fps)
 
         detected_fps = self._cap.get(cv2.CAP_PROP_FPS)
-        if detected_fps and detected_fps > 0:
-            self._fps = detected_fps
+        if detected_fps and math.isfinite(detected_fps) and 1.0 <= detected_fps <= 120.0:
+            self._fps = float(detected_fps)
         else:
             self._fps = self.config.fps or 30.0
 

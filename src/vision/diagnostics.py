@@ -150,8 +150,15 @@ class BoardDiagnosticVisualizer:
 
         # 6. Inset normalized board thumbnail
         if normalized_board is not None and thumbnail_size[0] > 0 and thumbnail_size[1] > 0:
+            thumb_src = normalized_board
+            if thumb_src.dtype != np.uint8:
+                thumb_src = np.clip(thumb_src, 0, 255).astype(np.uint8)
+            if thumb_src.ndim == 2:
+                thumb_src = cv2.cvtColor(thumb_src, cv2.COLOR_GRAY2BGR)
+            elif thumb_src.ndim == 3 and thumb_src.shape[2] == 4:
+                thumb_src = cv2.cvtColor(thumb_src, cv2.COLOR_BGRA2BGR)
             thumb_w, thumb_h = thumbnail_size
-            thumb = cv2.resize(normalized_board, (thumb_w, thumb_h))
+            thumb = cv2.resize(thumb_src, (thumb_w, thumb_h))
             margin = 20
             x1 = w_img - thumb_w - margin
             y1 = margin

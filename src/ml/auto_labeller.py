@@ -196,9 +196,11 @@ class AutoLabeller:
         for frame in self.video_adapter:
             # 1. Acquire / update board geometry if not preset
             if homography_matrix is None:
-                geom = self.localizer.localize(frame)
-                if geom.is_valid:
-                    self.geometry = geom
+                geom = self.localizer.locate(frame)
+                if geom is not None and geom.is_valid:
+                    self.geometry = geom.model_copy(
+                        update={"orientation": self.orientation, "orientation_calibrated": True}
+                    )
                     homography_matrix, _ = GeometryTransformer.compute_homography(
                         geom.corners, target_size=self.target_board_size
                     )
@@ -212,6 +214,11 @@ class AutoLabeller:
                     )
                     self.fsm.update(obs_lost)
                     continue
+
+            if not self.geometry.orientation_calibrated:
+                self.geometry = self.geometry.model_copy(
+                    update={"orientation": self.orientation, "orientation_calibrated": True}
+                )
 
             # 2. Warp board to normalized square
             warped = GeometryTransformer.warp_board(

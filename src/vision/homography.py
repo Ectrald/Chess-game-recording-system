@@ -255,14 +255,20 @@ class GeometryTransformer:
     @staticmethod
     def project_image_to_board(points: np.ndarray, homography_matrix: np.ndarray) -> np.ndarray:
         """Projects array of 2D points (N, 2) from source frame space to board space."""
-        pts = np.asarray(points, dtype=np.float32).reshape(-1, 1, 2)
+        pts_raw = np.asarray(points, dtype=np.float32)
+        if pts_raw.size == 0:
+            return np.empty((0, 2), dtype=np.float32)
+        pts = pts_raw.reshape(-1, 1, 2)
         transformed = cv2.perspectiveTransform(pts, homography_matrix.astype(np.float64))
         return transformed.reshape(-1, 2)
 
     @staticmethod
     def project_board_to_image(points: np.ndarray, inverse_homography: np.ndarray) -> np.ndarray:
         """Projects array of 2D points (N, 2) from normalized board space back to source frame space."""
-        pts = np.asarray(points, dtype=np.float32).reshape(-1, 1, 2)
+        pts_raw = np.asarray(points, dtype=np.float32)
+        if pts_raw.size == 0:
+            return np.empty((0, 2), dtype=np.float32)
+        pts = pts_raw.reshape(-1, 1, 2)
         transformed = cv2.perspectiveTransform(pts, inverse_homography.astype(np.float64))
         return transformed.reshape(-1, 2)
 

@@ -260,13 +260,18 @@ class CellRoiExtractor:
     ) -> Dict[str, np.ndarray]:
         """Extracts unexpanded 1:1 square crops matching chesscog occupancy_classifier (ResNet 100x100)."""
         h_img, w_img = board_image.shape[:2]
+        pad_x = max(0, (w_img - self.board_size) // 2)
+        pad_y = max(0, (h_img - self.board_size) // 2)
+        sx = (w_img / float(self.board_size)) if w_img < self.board_size else 1.0
+        sy = (h_img / float(self.board_size)) if h_img < self.board_size else 1.0
+
         crops: Dict[str, np.ndarray] = {}
         for sq in CHESS_SQUARES:
             x1, y1, x2, y2 = self.get_square_coordinates(sq, orientation)
-            cx1 = max(0, min(w_img, x1))
-            cy1 = max(0, min(h_img, y1))
-            cx2 = max(0, min(w_img, x2))
-            cy2 = max(0, min(h_img, y2))
+            cx1 = max(0, min(w_img, int(round(x1 * sx)) + pad_x))
+            cy1 = max(0, min(h_img, int(round(y1 * sy)) + pad_y))
+            cx2 = max(0, min(w_img, int(round(x2 * sx)) + pad_x))
+            cy2 = max(0, min(h_img, int(round(y2 * sy)) + pad_y))
             patch = board_image[cy1:cy2, cx1:cx2]
             if patch.size == 0:
                 crops[sq] = np.zeros((output_size[1], output_size[0], 3), dtype=board_image.dtype)

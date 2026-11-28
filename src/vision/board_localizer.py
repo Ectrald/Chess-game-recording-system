@@ -257,9 +257,13 @@ class CoarseToFineLocalizer(BaseBoardLocalizer):
         # Stage 1: Coarse BBox
         roi_bbox = self._detect_coarse_bbox(frame.image)
         if roi_bbox is None and self.yolo_model is not None:
-            return None
+            self._yolo_miss_count += 1
+            if self._yolo_miss_count >= 3:
+                logger.debug("YOLO coarse detection missed; falling back to global Hough/contour corner detection.")
+        else:
+            self._yolo_miss_count = 0
 
-        # Stage 2: Fine Corner Refinement inside ROI
+        # Stage 2: Fine Corner Refinement inside ROI (or full-frame fallback if YOLO missed)
         corners = self.refiner.find_board_corners(frame.image, roi_bbox=roi_bbox)
         if corners is None or len(corners) != 4:
             return None
@@ -336,7 +340,16 @@ class ArucoLocalizer(BaseBoardLocalizer):
         self.detector = cv2.aruco.ArucoDetector(self.dictionary, self.detector_params)
 
     def locate(self, frame: Frame) -> Optional[BoardGeometry]:
-        gray = cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY) if frame.image.ndim == 3 else frame.image
+        if frame.image.ndim == 3 and frame.image.shape[2] == 3:
+            gray = cv2.cvtColor(frame.image, cv2.COLOR_BGR2GRAY)
+        elif frame.image.ndim == 3 and frame.image.shape[2] == 4:
+            gray = cv2.cvtColor(frame.image, cv2.COLOR_BGRA2GRAY)
+        elif frame.image.ndim == 3 and frame.image.shape[2] == 1:
+            gray = frame.image[:, :, 0]
+        else:
+            gray = frame.image
+        if gray.dtype != np.uint8:
+            gray = np.clip(gray, 0, 255).astype(np.uint8)
         marker_corners, ids, _ = self.detector.detectMarkers(gray)
 
         if ids is None or len(ids) < 4:
@@ -434,7 +447,7 @@ class BoardGeometryTracker:
             return None, "unchanged"
 
         ordered = order_corners_canonical(candidate)
-        is_valid, _, _ = GeometryTransformer.validate_quadrilateral(
+        is_valid, _, metrics = GeometryTransformer.validate_quadrilateral(
             ordered,
             image_shape=(frame.height, frame.width),
             min_area_ratio=min_area_ratio,
@@ -445,10 +458,21 @@ class BoardGeometryTracker:
                 return None, "lost"
             return None, "unchanged"
 
+        cur_area = float(getattr(current_geometry, "polygon_area_px2", 0.0) or 0.0)
+        new_area = float(metrics.get("polygon_area", 0.0) or 0.0)
+        if cur_area > 10.0 and new_area > 0.0:
+            area_ratio = new_area / cur_area
+            if area_ratio < 0.72 or area_ratio > 1.38:
+                self._lost_checks += 1
+                if self._lost_checks >= self.max_lost_checks:
+                    return None, "lost"
+                return None, "unchanged"
+
         raw_shift = max(
             math.hypot(nc[0] - oc[0], nc[1] - oc[1]) for nc, oc in zip(ordered, cur_corners)
         )
-        if raw_shift > self.jump_limit_px:
+        eff_jump = min(self.jump_limit_px, max(bw, bh) * 0.25)
+        if raw_shift > eff_jump:
             self._lost_checks += 1
             if self._lost_checks >= self.max_lost_checks:
                 return None, "lost"
@@ -492,11 +516,21 @@ def create_board_localizer(
     config: Union[VisionConfig, LocalizerConfig, Dict[str, Any]],
 ) -> BaseBoardLocalizer:
     """Factory creating localizer strategy from configuration settings."""
+    vision_cfg: Optional[VisionConfig] = None
+    loc_cfg_obj: Optional[LocalizerConfig] = None
+    target_size = 640
+    min_area = 0.15
+
     if isinstance(config, VisionConfig):
-        mode = config.localizer.mode
-        yolo_path = config.localizer.yolo_model_path
-        yolo_conf = config.localizer.yolo_confidence
+        vision_cfg = config
+        loc_cfg_obj = config.localizer
+        mode = loc_cfg_obj.mode
+        yolo_path = loc_cfg_obj.yolo_model_path
+        yolo_conf = loc_cfg_obj.yolo_confidence
+        target_size = config.target_board_size
+        min_area = config.min_board_area_ratio
     elif isinstance(config, LocalizerConfig):
+        loc_cfg_obj = config
         mode = config.mode
         yolo_path = config.yolo_model_path
         yolo_conf = config.yolo_confidence
@@ -505,22 +539,39 @@ def create_board_localizer(
         mode = loc_cfg.get("mode", "coarse_to_fine")
         yolo_path = loc_cfg.get("yolo_model_path", "data/weights/yolov8n_board.pt")
         yolo_conf = loc_cfg.get("yolo_confidence", 0.40)
+        target_size = int(config.get("target_board_size", 640))
+        min_area = float(config.get("min_board_area_ratio", 0.15))
     else:
         mode = "coarse_to_fine"
         yolo_path = None
         yolo_conf = 0.40
 
     if mode == "pure_hough":
-        return PureHoughLocalizer()
+        if loc_cfg_obj is not None:
+            return PureHoughLocalizer(
+                canny_low=loc_cfg_obj.canny_low_threshold,
+                canny_high=loc_cfg_obj.canny_high_threshold,
+                hough_thresh=loc_cfg_obj.hough_threshold,
+                min_line_len=loc_cfg_obj.hough_min_line_length,
+                max_line_gap=loc_cfg_obj.hough_max_line_gap,
+                subpixel_win_size=loc_cfg_obj.subpixel_win_size,
+                target_size=target_size,
+                min_area_ratio=min_area,
+            )
+        return PureHoughLocalizer(target_size=target_size, min_area_ratio=min_area)
     elif mode == "manual":
         # Default placeholder corners for manual mode
         return ManualCornerLocalizer(
-            corners=[(200.0, 100.0), (800.0, 100.0), (800.0, 700.0), (200.0, 700.0)]
+            corners=[(200.0, 100.0), (800.0, 100.0), (800.0, 700.0), (200.0, 700.0)],
+            target_size=target_size,
         )
     elif mode == "aruco":
-        return ArucoLocalizer()
+        return ArucoLocalizer(target_size=target_size)
     else:
         return CoarseToFineLocalizer(
             yolo_model_path=yolo_path,
             yolo_confidence=yolo_conf,
+            config=vision_cfg,
+            target_size=target_size,
+            min_area_ratio=min_area,
         )

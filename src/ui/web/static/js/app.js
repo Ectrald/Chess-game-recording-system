@@ -88,6 +88,9 @@ class ChessWebDashboard {
     this.btnToggleUncertain = document.getElementById("btnToggleUncertain");
     this.isUncertainMinimized = false;
     this.lastUncertainSig = null;
+    this.lastActionError = null;
+    this._notifiedCompletedJobIds = new Set();
+    this._notifiedFailedJobIds = new Set();
 
     this.sessionsModal = document.getElementById("sessionsModal");
     this.btnCloseSessionsModal = document.getElementById("btnCloseSessionsModal");
@@ -111,7 +114,20 @@ class ChessWebDashboard {
     this.initBoardGrid();
     this.bindEvents();
     this.loadVideoDevices();
+    this.loadInitialState();
     this.connectWebSocket();
+  }
+
+  async loadInitialState() {
+    try {
+      const res = await fetch("/api/state");
+      if (res.ok) {
+        const data = await res.json();
+        this.updateState(data);
+      }
+    } catch (err) {
+      console.error("Error loading initial state:", err);
+    }
   }
 
   initBoardGrid() {
@@ -151,26 +167,39 @@ class ChessWebDashboard {
   }
 
   bindEvents() {
-    this.btnPause.addEventListener("click", () => this.postAction("/api/action/pause"));
+    this.btnPause.addEventListener("click", async () => {
+      const res = await this.postAction("/api/action/pause");
+      if (!res || !res.success) {
+        this.showToast(this.lastActionError || "Не удалось переключить режим распознавания.", true);
+      }
+    });
     this.btnCalibrateNow.addEventListener("click", async () => {
       const res = await this.postAction("/api/action/calibrate");
       if (res && res.success) {
-        this.showToast(`Доска откалибрована (${(res.board_orientation || "").toUpperCase()}). Можно нажать «▶ Старт».`);
+        this.showToast(`Калибровка доски выполнена (${(res.board_orientation || "").toUpperCase()}). Доступен запуск распознавания.`);
       } else {
-        this.showToast("Не удалось автоматически найти доску на кадре. Попробуйте потянуть углы вручную или поправьте камеру.", true);
+        this.showToast("Автоматическое обнаружение доски на кадре не удалось. Скорректируйте положение камеры или задайте углы вручную.", true);
       }
     });
-    this.btnRollback.addEventListener("click", () => {
+    this.btnRollback.addEventListener("click", async () => {
       this.viewPly = null;
-      this.postAction("/api/action/rollback");
+      const res = await this.postAction("/api/action/rollback");
+      if (!res || !res.success) {
+        this.showToast(this.lastActionError || "Не удалось отменить последний ход.", true);
+      }
     });
-    this.btnRecalibrate.addEventListener("click", () => {
+    this.btnRecalibrate.addEventListener("click", async () => {
       this.corners = null;
       if (this.cornersCanvas) {
         const ctx = this.cornersCanvas.getContext("2d");
         ctx.clearRect(0, 0, this.cornersCanvas.width, this.cornersCanvas.height);
       }
-      this.postAction("/api/action/recalibrate");
+      const res = await this.postAction("/api/action/recalibrate");
+      if (res && res.success) {
+        this.showToast("Калибровка сброшена. Выполните повторную калибровку.");
+      } else {
+        this.showToast(this.lastActionError || "Не удалось сбросить калибровку.", true);
+      }
     });
     this.btnResetSession.addEventListener("click", async () => {
       if (!confirm("Сбросить текущую партию и вернуть доску в начальную позицию?")) return;
@@ -178,6 +207,8 @@ class ChessWebDashboard {
       const res = await this.postAction("/api/action/reset_session");
       if (res && res.success) {
         this.showToast("Сессия сброшена в начальную позицию.");
+      } else {
+        this.showToast(this.lastActionError || "Не удалось сбросить сессию.", true);
       }
     });
     this.btnNewSession.addEventListener("click", async () => {
@@ -185,6 +216,8 @@ class ChessWebDashboard {
       const res = await this.postAction("/api/sessions/new", { pause: true });
       if (res && res.success) {
         this.showToast(`Создана новая сессия: ${res.session_id}`);
+      } else {
+        this.showToast(this.lastActionError || "Не удалось создать новую сессию.", true);
       }
     });
     this.btnDownloadPgn.addEventListener("click", () => {
@@ -222,6 +255,8 @@ class ChessWebDashboard {
             `Видео сохранено (${res.video.frame_count} кадров, ${res.video.duration_sec}s): ` +
             `<a href="${url}" target="_blank">Скачать ${res.video.filename}</a>`
           );
+        } else {
+          this.showToast(this.lastActionError || "Не удалось остановить запись видео.", true);
         }
       }
     });
@@ -246,6 +281,8 @@ class ChessWebDashboard {
       if (res && res.success) {
         this.sessionsModal.classList.remove("open");
         this.showToast(`Создана сессия ${res.session_id}`);
+      } else {
+        this.showToast(this.lastActionError || "Не удалось создать сессию.", true);
       }
     });
 
@@ -276,6 +313,9 @@ class ChessWebDashboard {
     });
 
     // Corner handles
+    if (this.videoStream) {
+      this.videoStream.addEventListener("load", () => this.renderCornerHandles());
+    }
     if (this.cornersCanvas) {
       this.cornersCanvas.addEventListener("mousedown", (e) => this.handleCornerMouseDown(e));
       window.addEventListener("mousemove", (e) => this.handleCornerMouseMove(e));
@@ -295,9 +335,11 @@ class ChessWebDashboard {
     });
     this.btnManualCommit.addEventListener("click", () => {
       const uci = this.manualUciInput.value.trim().toLowerCase();
-      if (uci.length >= 4) {
-        this.resolveUncertainty({ move_uci: uci });
+      if (!/^[a-h][1-8][a-h][1-8][qrbn]?$/.test(uci)) {
+        this.showToast("Неверный формат UCI (пример: e2e4, g1f3, e7e8q).", true);
+        return;
       }
+      this.resolveUncertainty({ move_uci: uci });
     });
     this.manualUciInput.addEventListener("keydown", (e) => {
       if (e.key === "Enter") {
@@ -331,16 +373,19 @@ class ChessWebDashboard {
       try { this.ws.close(); } catch (e) {}
     }
 
-    this.ws = new WebSocket(wsUrl);
-    this.ws.onopen = () => {
+    const ws = new WebSocket(wsUrl);
+    this.ws = ws;
+    ws.onopen = () => {
+      if (ws !== this.ws) return;
       this.badgeConn.className = "badge badge-connected";
-      this.badgeConn.innerHTML = '<span class="badge-dot"></span> LIVE';
+      this.badgeConn.innerHTML = '<span class="badge-dot"></span> АКТИВНО';
       if (this.reconnectTimer) {
         clearTimeout(this.reconnectTimer);
         this.reconnectTimer = null;
       }
     };
-    this.ws.onmessage = (event) => {
+    ws.onmessage = (event) => {
+      if (ws !== this.ws) return;
       try {
         const data = JSON.parse(event.data);
         this.handleMessage(data);
@@ -348,13 +393,15 @@ class ChessWebDashboard {
         console.error("Error parsing WebSocket message:", err);
       }
     };
-    this.ws.onclose = () => {
+    ws.onclose = () => {
+      if (ws !== this.ws) return;
       this.badgeConn.className = "badge badge-disconnected";
-      this.badgeConn.innerHTML = '<span class="badge-dot"></span> OFFLINE';
+      this.badgeConn.innerHTML = '<span class="badge-dot"></span> НЕТ СВЯЗИ';
       this.scheduleReconnect();
     };
-    this.ws.onerror = () => {
-      this.ws.close();
+    ws.onerror = () => {
+      if (ws !== this.ws) return;
+      ws.close();
     };
   }
 
@@ -388,15 +435,15 @@ class ChessWebDashboard {
     if (this.metaWhiteEl && state.white_player) this.metaWhiteEl.textContent = state.white_player;
     if (this.metaBlackEl && state.black_player) this.metaBlackEl.textContent = state.black_player;
     if (this.videoSourceLabel && state.video_source) {
-      this.videoSourceLabel.textContent = `Source: ${state.video_source}`;
+      this.videoSourceLabel.textContent = `Источник: ${state.video_source}`;
     }
 
-    this.badgeFsm.textContent = `FSM: ${state.fsm_state}`;
-    this.badgeFps.textContent = `${state.fps} FPS`;
+    this.badgeFsm.textContent = `FSM: ${String(state.fsm_state || "").toUpperCase()}`;
+    this.badgeFps.textContent = `${state.fps} кадр/с`;
 
     // Pause indicator
     this.isPaused = !!state.is_paused;
-    this.btnPause.textContent = this.isPaused ? "▶ Старт" : "⏸ Пауза";
+    this.btnPause.textContent = this.isPaused ? "Запуск" : "Пауза";
     if (this.isPaused) {
       this.btnPause.classList.add("btn-success");
       this.btnPause.classList.remove("btn-warning");
@@ -411,17 +458,17 @@ class ChessWebDashboard {
     const rec = state.video_recording || {};
     this.isRecordingVideo = !!rec.is_recording;
     if (this.isRecordingVideo) {
-      this.btnRecordVideo.textContent = "⏹ Стоп видео";
+      this.btnRecordVideo.textContent = "Остановить запись";
       this.btnRecordVideo.classList.add("btn-danger");
       if (this.badgeRecStatus) {
         this.badgeRecStatus.style.display = "inline-flex";
         const secs = Math.floor(rec.duration_sec || 0);
         const mm = Math.floor(secs / 60);
         const ss = String(secs % 60).padStart(2, "0");
-        this.recTimerLabel.textContent = `REC ${mm}:${ss}`;
+        this.recTimerLabel.textContent = `ЗАПИСЬ ${mm}:${ss}`;
       }
     } else {
-      this.btnRecordVideo.textContent = "⏺ Запись видео";
+      this.btnRecordVideo.textContent = "Запись видео";
       this.btnRecordVideo.classList.remove("btn-danger");
       if (this.badgeRecStatus) this.badgeRecStatus.style.display = "none";
     }
@@ -431,7 +478,7 @@ class ChessWebDashboard {
     const oriSuffix = state.board_orientation && state.board_orientation !== "unknown"
       ? ` (${state.board_orientation.replace("_", " ").toUpperCase()})`
       : "";
-    this.metaBoardEl.textContent = state.board_detected ? `LOCKED${oriSuffix}` : "SEARCHING...";
+    this.metaBoardEl.textContent = state.board_detected ? `ЗАФИКСИРОВАНА${oriSuffix}` : "ПОИСК ДОСКИ...";
     this.metaBoardEl.style.color = state.board_detected ? "var(--color-success)" : "var(--color-warning)";
 
     this.boardOrientation = state.board_orientation || "white_bottom";
@@ -518,10 +565,10 @@ class ChessWebDashboard {
 
     if (this.replayIndicator) {
       if (this.viewPly === null) {
-        this.replayIndicator.textContent = `LIVE • Ход ${total}/${total}`;
+        this.replayIndicator.textContent = `Текущая • Ход ${total}/${total}`;
         this.replayIndicator.classList.remove("is-reviewing");
       } else {
-        this.replayIndicator.textContent = `ПРОСМОТР • ${activePly}/${total}`;
+        this.replayIndicator.textContent = `Просмотр • ${activePly}/${total}`;
         this.replayIndicator.classList.add("is-reviewing");
       }
     }
@@ -765,8 +812,8 @@ class ChessWebDashboard {
             <div class="session-item-meta">${v.size_mb} МБ</div>
           </div>
           <div class="btn-group">
-            <a class="btn btn-sm" href="${v.download_url}" target="_blank">⬇ Скачать</a>
-            <button class="btn btn-sm btn-primary">🎞 Расшифровать</button>
+            <a class="btn btn-sm" href="${v.download_url}" target="_blank">Скачать</a>
+            <button class="btn btn-sm btn-primary">Анализировать</button>
           </div>
         `;
         row.querySelector("button").addEventListener("click", () => this.startTranscription(v.path));
@@ -817,6 +864,10 @@ class ChessWebDashboard {
     });
     if (res && res.success) {
       this.renderTranscribeProgress(res);
+    } else {
+      const errMsg = this.lastActionError || "Не удалось запустить анализ видеозаписи.";
+      this.transcribeStatusText.textContent = `Ошибка: ${errMsg}`;
+      this.showToast(errMsg, true);
     }
   }
 
@@ -835,15 +886,37 @@ class ChessWebDashboard {
     this.transcribeProgressBox.style.display = "block";
     this.transcribeProgressFill.style.width = `${job.progress_pct || 0}%`;
 
+    const isRunning = job.status === "running";
+    if (this.btnUploadAndTranscribe) {
+      this.btnUploadAndTranscribe.disabled = isRunning;
+    }
+    if (this.videosListEl) {
+      this.videosListEl.querySelectorAll("button").forEach((b) => {
+        b.disabled = isRunning;
+      });
+    }
+
+    const jobKey = job.job_id || `${job.video_name || ""}:${job.session_id || ""}`;
+
     if (job.status === "running") {
       this.transcribeStatusText.textContent =
-        `Расшифровка ${job.video_name}: ${job.progress_pct}% (${job.frames_processed}/${job.total_frames || "?"} кадров), найдено полуходов: ${job.plies_found}`;
+        `Анализ видеофайла ${job.video_name}: ${job.progress_pct}% (${job.frames_processed}/${job.total_frames || "?"} кадров), выявлено полуходов: ${job.plies_found}`;
     } else if (job.status === "completed") {
       this.transcribeStatusText.textContent =
-        `Готово! Сессия ${job.session_id} загружена на доску (${job.plies_found} полуходов).`;
-      this.showToast(`Видео «${job.video_name}» расшифровано (${job.plies_found} полуходов). Листайте ходы на правой доске.`);
+        `Анализ завершён. Сессия ${job.session_id} загружена в протокол (полуходов: ${job.plies_found}).`;
+      if (!this._notifiedCompletedJobIds.has(jobKey)) {
+        this._notifiedCompletedJobIds.add(jobKey);
+        this.showToast(`Видеозапись «${job.video_name}» обработана (полуходов: ${job.plies_found}). Позиция доступна для просмотра по ходам.`);
+        if (this.transcribeModal && this.transcribeModal.classList.contains("open")) {
+          this.loadSessionsList();
+        }
+      }
     } else if (job.status === "failed") {
-      this.transcribeStatusText.textContent = `Ошибка расшифровки: ${job.error || "unknown error"}`;
+      this.transcribeStatusText.textContent = `Ошибка анализа видеозаписи: ${job.error || "unknown error"}`;
+      if (!this._notifiedFailedJobIds.has(jobKey)) {
+        this._notifiedFailedJobIds.add(jobKey);
+        this.showToast(`Ошибка анализа видеозаписи: ${job.error || "unknown error"}`, true);
+      }
     }
 
     if (this.transcribeMovesPreview && Array.isArray(job.moves)) {
@@ -855,15 +928,21 @@ class ChessWebDashboard {
     if (!this.modalOverlay || !this.btnToggleUncertain) return;
     if (this.isUncertainMinimized) {
       this.modalOverlay.classList.add("minimized");
-      this.btnToggleUncertain.textContent = "▴ Развернуть";
+      this.btnToggleUncertain.textContent = "Развернуть";
     } else {
       this.modalOverlay.classList.remove("minimized");
-      this.btnToggleUncertain.textContent = "▾ Свернуть";
+      this.btnToggleUncertain.textContent = "Свернуть";
     }
   }
 
   showUncertainModal(candidates, reason = null, uncertainSquares = []) {
-    const sig = JSON.stringify({ candidates: candidates || [], reason: reason || "", squares: uncertainSquares || [] });
+    const illCount = (this.lastState && this.lastState.illegal_attempts) ? this.lastState.illegal_attempts : 0;
+    const sig = JSON.stringify({
+      candidates: candidates || [],
+      reason: reason || "",
+      squares: uncertainSquares || [],
+      illegal_attempts: illCount,
+    });
     if (sig === this.lastUncertainSig && this.modalOverlay.classList.contains("open")) {
       return;
     }
@@ -878,21 +957,21 @@ class ChessWebDashboard {
 
     if (this.modalTitleEl) {
       this.modalTitleEl.textContent = hasCandidates
-        ? "⚠️ Неопределённый ход"
-        : "⛔ Нелегальный ход или несовпадение доски";
+        ? "Неоднозначность распознавания хода"
+        : "Нарушение правил или расхождение позиции";
     }
     if (this.modalBodyEl) {
       if (reason) {
         this.modalBodyEl.textContent = reason;
       } else if (hasCandidates) {
         this.modalBodyEl.textContent =
-          "Несколько ходов имеют близкую уверенность. Выберите верный или введите UCI:";
+          "Несколько легальных ходов имеют близкую оценку достоверности. Выберите корректный вариант или укажите ход в нотации UCI:";
       } else {
         const sqText = Array.isArray(uncertainSquares) && uncertainSquares.length > 0
           ? ` (${uncertainSquares.join(", ")})`
           : "";
         this.modalBodyEl.textContent =
-          `Изменение на клетках${sqText} не соответствует ни одному легальному ходу. Верните фигуры на место или введите UCI:`;
+          `Изменение на полях${sqText} не соответствует ни одному легальному ходу. Восстановите позицию на доске или введите UCI вручную:`;
       }
     }
 
@@ -902,7 +981,7 @@ class ChessWebDashboard {
         btn.className = "candidate-btn";
         btn.innerHTML = `
           <span><strong>#${cand.rank}</strong> ${cand.san} (${cand.uci})</span>
-          <span style="color: var(--color-warning);">Score: ${cand.score}</span>
+          <span style="color: var(--color-warning);">Оценка: ${cand.score}</span>
         `;
         btn.addEventListener("click", () => {
           this.resolveUncertainty({ candidate_index: idx });
@@ -926,6 +1005,9 @@ class ChessWebDashboard {
     this.modalOverlay.classList.remove("open", "minimized");
     this.isUncertainMinimized = false;
     this.lastUncertainSig = null;
+    this.lastActionError = null;
+    this._notifiedCompletedJobIds = new Set();
+    this._notifiedFailedJobIds = new Set();
     this.manualUciInput.value = "";
   }
 
@@ -937,34 +1019,49 @@ class ChessWebDashboard {
   }
 
   getCanvasScale() {
-    if (!this.videoStream || !this.cornersCanvas) return { scaleX: 1, scaleY: 1, natW: 1, natH: 1, rect: null };
-    const rect = this.videoStream.getBoundingClientRect();
-    if (rect.width === 0 || rect.height === 0) return { scaleX: 1, scaleY: 1, natW: 1, natH: 1, rect };
-    if (this.cornersCanvas.width !== Math.round(rect.width) || this.cornersCanvas.height !== Math.round(rect.height)) {
-      this.cornersCanvas.width = Math.round(rect.width);
-      this.cornersCanvas.height = Math.round(rect.height);
+    if (!this.videoStream || !this.cornersCanvas) {
+      return { ready: false, scale: 1, offsetX: 0, offsetY: 0, natW: 1, natH: 1, canvasRect: null };
     }
-    const natW = this.videoStream.naturalWidth || rect.width;
-    const natH = this.videoStream.naturalHeight || rect.height;
+    const canvasRect = this.cornersCanvas.getBoundingClientRect();
+    const vidRect = this.videoStream.getBoundingClientRect();
+    if (canvasRect.width === 0 || canvasRect.height === 0 || vidRect.width === 0 || vidRect.height === 0) {
+      return { ready: false, scale: 1, offsetX: 0, offsetY: 0, natW: 1, natH: 1, canvasRect };
+    }
+    if (this.cornersCanvas.width !== Math.round(canvasRect.width) || this.cornersCanvas.height !== Math.round(canvasRect.height)) {
+      this.cornersCanvas.width = Math.round(canvasRect.width);
+      this.cornersCanvas.height = Math.round(canvasRect.height);
+    }
+    const natW = this.videoStream.naturalWidth || 0;
+    const natH = this.videoStream.naturalHeight || 0;
+    if (natW <= 0 || natH <= 0) {
+      return { ready: false, scale: 1, offsetX: 0, offsetY: 0, natW: 1, natH: 1, canvasRect };
+    }
+    const scale = Math.min(vidRect.width / natW, vidRect.height / natH);
+    const drawW = natW * scale;
+    const drawH = natH * scale;
+    const offsetX = (vidRect.left - canvasRect.left) + (vidRect.width - drawW) / 2;
+    const offsetY = (vidRect.top - canvasRect.top) + (vidRect.height - drawH) / 2;
     return {
-      scaleX: rect.width / Math.max(1, natW),
-      scaleY: rect.height / Math.max(1, natH),
+      ready: true,
+      scale,
+      offsetX,
+      offsetY,
       natW,
       natH,
-      rect
+      canvasRect,
     };
   }
 
   renderCornerHandles() {
     if (!this.cornersCanvas || !this.videoStream) return;
-    const { scaleX, scaleY, rect } = this.getCanvasScale();
-    if (!rect) return;
+    const { ready, scale, offsetX, offsetY, canvasRect } = this.getCanvasScale();
+    if (!canvasRect) return;
     const ctx = this.cornersCanvas.getContext("2d");
     ctx.clearRect(0, 0, this.cornersCanvas.width, this.cornersCanvas.height);
 
-    if (!this.corners || this.corners.length !== 4) return;
+    if (!ready || !this.corners || this.corners.length !== 4) return;
 
-    const pts = this.corners.map(c => [c[0] * scaleX, c[1] * scaleY]);
+    const pts = this.corners.map(c => [offsetX + c[0] * scale, offsetY + c[1] * scale]);
 
     ctx.beginPath();
     ctx.moveTo(pts[0][0], pts[0][1]);
@@ -1003,14 +1100,14 @@ class ChessWebDashboard {
 
   handleCornerMouseDown(e) {
     if (!this.corners || this.corners.length !== 4) return;
-    const { scaleX, scaleY, rect } = this.getCanvasScale();
-    if (!rect) return;
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const { ready, scale, offsetX, offsetY, canvasRect } = this.getCanvasScale();
+    if (!ready || !canvasRect) return;
+    const mouseX = e.clientX - canvasRect.left;
+    const mouseY = e.clientY - canvasRect.top;
 
     for (let i = 0; i < 4; i++) {
-      const cx = this.corners[i][0] * scaleX;
-      const cy = this.corners[i][1] * scaleY;
+      const cx = offsetX + this.corners[i][0] * scale;
+      const cy = offsetY + this.corners[i][1] * scale;
       if (Math.hypot(mouseX - cx, mouseY - cy) <= 18) {
         this.draggedCornerIdx = i;
         this.isDragging = true;
@@ -1023,21 +1120,21 @@ class ChessWebDashboard {
 
   handleCornerMouseMove(e) {
     if (!this.corners || this.corners.length !== 4) return;
-    const { scaleX, scaleY, natW, natH, rect } = this.getCanvasScale();
-    if (!rect) return;
-    const mouseX = e.clientX - rect.left;
-    const mouseY = e.clientY - rect.top;
+    const { ready, scale, offsetX, offsetY, natW, natH, canvasRect } = this.getCanvasScale();
+    if (!ready || !canvasRect) return;
+    const mouseX = e.clientX - canvasRect.left;
+    const mouseY = e.clientY - canvasRect.top;
 
     if (this.isDragging && this.draggedCornerIdx !== -1) {
-      const clampedNativeX = Math.max(0, Math.min(natW, mouseX / scaleX));
-      const clampedNativeY = Math.max(0, Math.min(natH, mouseY / scaleY));
+      const clampedNativeX = Math.max(0, Math.min(natW, (mouseX - offsetX) / scale));
+      const clampedNativeY = Math.max(0, Math.min(natH, (mouseY - offsetY) / scale));
       this.corners[this.draggedCornerIdx] = [clampedNativeX, clampedNativeY];
       this.renderCornerHandles();
     } else {
       let isOver = false;
       for (let i = 0; i < 4; i++) {
-        const cx = this.corners[i][0] * scaleX;
-        const cy = this.corners[i][1] * scaleY;
+        const cx = offsetX + this.corners[i][0] * scale;
+        const cy = offsetY + this.corners[i][1] * scale;
         if (Math.hypot(mouseX - cx, mouseY - cy) <= 18) {
           isOver = true;
           break;
@@ -1047,19 +1144,23 @@ class ChessWebDashboard {
     }
   }
 
-  handleCornerMouseUp() {
+  async handleCornerMouseUp() {
     if (this.isDragging && this.draggedCornerIdx !== -1) {
       this.isDragging = false;
       this.draggedCornerIdx = -1;
       this.cornersCanvas.style.cursor = "default";
       if (this.corners && this.corners.length === 4) {
-        this.postAction("/api/action/set_corners", { corners: this.corners });
+        const res = await this.postAction("/api/action/set_corners", { corners: this.corners });
+        if (!res || !res.success) {
+          this.showToast(this.lastActionError || "Некорректные координаты углов доски.", true);
+        }
       }
       this.renderCornerHandles();
     }
   }
 
   async postAction(url, body = {}) {
+    this.lastActionError = null;
     try {
       const res = await fetch(url, {
         method: "POST",
@@ -1068,19 +1169,25 @@ class ChessWebDashboard {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
+        this.lastActionError = (data && data.detail) ? String(data.detail) : `HTTP ${res.status}`;
         console.error(`Action ${url} failed:`, data);
         return null;
       }
       return data;
     } catch (err) {
+      this.lastActionError = err && err.message ? err.message : "Network error";
       console.error(`Error dispatching action to ${url}:`, err);
       return null;
     }
   }
 
   async resolveUncertainty(payload) {
-    await this.postAction("/api/action/resolve", payload);
-    this.hideUncertainModal();
+    const res = await this.postAction("/api/action/resolve", payload);
+    if (res && res.success) {
+      this.hideUncertainModal();
+    } else {
+      this.showToast(this.lastActionError || "Не удалось применить ход.", true);
+    }
   }
 }
 

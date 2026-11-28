@@ -465,4 +465,24 @@ def test_video_recording_upload_and_transcribe_pipeline(
     js = client.get("/static/js/app.js").text
     assert "setViewPly" in js
     assert "applyUncertainMinimizeState" in js
+    assert "_notifiedCompletedJobIds" in js
+    assert "loadInitialState" in js
+    assert "lastActionError" in js
+    assert "offsetX" in js
+
+
+def test_download_blocks_non_video_and_resolve_error(
+    client: TestClient, orchestrator: SystemOrchestrator
+) -> None:
+    """Download endpoint rejects non-video files in session dir and resolve 400 preserves state."""
+    orchestrator.save_session_snapshot()
+    manifest_file = orchestrator.session_dir / "manifest.json"
+    assert manifest_file.is_file()
+    dl_non_video = client.get(f"/api/videos/download?path={manifest_file}")
+    assert dl_non_video.status_code == 404
+
+    res_bad = client.post("/api/action/resolve", json={"move_uci": "e1e8"})
+    assert res_bad.status_code == 400
+    assert orchestrator.state_manager.ply == 0
+
 

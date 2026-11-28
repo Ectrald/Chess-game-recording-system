@@ -10,6 +10,7 @@ Guarantees data safety against sudden application crashes or power failures:
 from __future__ import annotations
 
 import logging
+import os
 from pathlib import Path
 from typing import List, Optional, Tuple
 import chess
@@ -35,8 +36,16 @@ class RecoveryManager:
         self.journal_file = self.session_dir / journal_filename
         self.repository = JSONLEventRepository(self.session_dir, filename=journal_filename)
 
+    def _truncate_journal_in_place(self, truncate_pos: int) -> None:
+        """Safely truncates the journal file in-place and flushes to disk."""
+        with self.journal_file.open("r+b") as f:
+            f.truncate(truncate_pos)
+            f.flush()
+            os.fsync(f.fileno())
+        self.repository._initialize_from_existing()
+
     def sanitize_corrupted_tail(self) -> int:
-        """Detects and trims incomplete lines at the end of the journal file.
+        """Detects and trims incomplete or malformed trailing lines in the journal file.
 
         Such incomplete lines typically occur when process execution is terminated
         abruptly (e.g. SIGKILL, power loss) mid-write.
@@ -53,45 +62,39 @@ class RecoveryManager:
         if not data:
             return 0
 
-        # Check if the file ends cleanly with newline
-        last_newline = data.rfind(b"\n")
-        if last_newline == len(data) - 1:
-            # File ends with \n; check if the last line parses validly
-            lines = data.split(b"\n")
-            non_empty_lines = [l for l in lines if l.strip()]
-            if not non_empty_lines:
-                return 0
+        orig_len = len(data)
+        pos = orig_len
 
-            last_line = non_empty_lines[-1]
-            try:
-                MoveEvent.model_validate_json(last_line.decode("utf-8"))
-                return 0  # Fully valid clean tail
-            except Exception:
-                # The last line before newline is malformed; truncate back to previous newline
-                prev_newline = data[:last_newline].rfind(b"\n")
-                truncate_pos = prev_newline + 1 if prev_newline != -1 else 0
-                truncated_bytes = len(data) - truncate_pos
-                with self.journal_file.open("wb") as f:
-                    f.write(data[:truncate_pos])
-                logger.warning(
-                    "Truncated %d corrupted bytes from journal %s",
-                    truncated_bytes,
-                    self.journal_file.name,
-                )
-                return truncated_bytes
+        while pos > 0:
+            line_start = data.rfind(b"\n", 0, pos)
+            # If the slice ends with \n, trim one trailing newline step back
+            if pos == data.rfind(b"\n", 0, pos) + 1:
+                line_start = data.rfind(b"\n", 0, pos - 1)
+                candidate = data[line_start + 1 : pos - 1].strip()
+                if not candidate:
+                    pos = line_start + 1 if line_start != -1 else 0
+                    continue
+                try:
+                    MoveEvent.model_validate_json(candidate.decode("utf-8"))
+                    break
+                except Exception:
+                    pos = line_start + 1 if line_start != -1 else 0
+            else:
+                # Last line without trailing newline
+                candidate = data[line_start + 1 : pos].strip()
+                if not candidate:
+                    pos = line_start + 1 if line_start != -1 else 0
+                    continue
+                pos = line_start + 1 if line_start != -1 else 0
 
-        # File did NOT end with newline: truncate to last valid newline
-        truncate_pos = last_newline + 1 if last_newline != -1 else 0
-        truncated_bytes = len(data) - truncate_pos
-
-        with self.journal_file.open("wb") as f:
-            f.write(data[:truncate_pos])
-
-        logger.warning(
-            "Truncated %d incomplete tail bytes from journal %s",
-            truncated_bytes,
-            self.journal_file.name,
-        )
+        truncated_bytes = orig_len - pos
+        if truncated_bytes > 0:
+            self._truncate_journal_in_place(pos)
+            logger.warning(
+                "Truncated %d incomplete/corrupted tail bytes from journal %s",
+                truncated_bytes,
+                self.journal_file.name,
+            )
         return truncated_bytes
 
     def recover_session(self) -> Tuple[GameStateManager, List[MoveEvent]]:

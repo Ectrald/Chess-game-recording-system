@@ -18,6 +18,7 @@ services:
       - ./models:/app/models
       - ./data/weights:/app/data/weights
       - ./data/sessions:/app/data/sessions
+      - ./data/recordings:/app/data/recordings
       - ./data/benchmark_videos:/app/data/benchmark_videos:ro
       - ./configs:/app/configs:ro
     devices:
@@ -40,6 +41,7 @@ services:
       - ./models:/app/models
       - ./data/weights:/app/data/weights
       - ./data/sessions:/app/data/sessions
+      - ./data/recordings:/app/data/recordings
       - ./data/benchmark_videos:/app/data/benchmark_videos:ro
       - ./configs:/app/configs:ro
     command: ["benchmark", "--pgn-ref", "data/ground_truth/test_short_game.pgn"]
@@ -59,7 +61,10 @@ services:
       - QT_X11_NO_MITSHM=1
     volumes:
       - /tmp/.X11-unix:/tmp/.X11-unix:ro
+      - ./models:/app/models
+      - ./data/weights:/app/data/weights
       - ./data/sessions:/app/data/sessions
+      - ./data/recordings:/app/data/recordings
       - ./data/benchmark_videos:/app/data/benchmark_videos:ro
       - ./configs:/app/configs:ro
     devices:

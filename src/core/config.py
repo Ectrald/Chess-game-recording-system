@@ -545,7 +545,11 @@ def load_config(
     # Allow environment variable override for stockfish path
     sf_env = os.environ.get("STOCKFISH_PATH")
     if sf_env:
-        raw_config.setdefault("analysis", {})["stockfish_path"] = sf_env
+        analysis_cfg = raw_config.get("analysis")
+        if not isinstance(analysis_cfg, dict):
+            analysis_cfg = {}
+        analysis_cfg["stockfish_path"] = sf_env
+        raw_config["analysis"] = analysis_cfg
 
     return AppConfig.model_validate(raw_config)
 
