@@ -25,7 +25,10 @@ build/
 data/benchmark_videos/*.mp4
 data/benchmark_videos/*.avi
 data/benchmark_videos/*.mov
+data/benchmark_videos/*.webm
 !data/benchmark_videos/.gitkeep
+data/sessions/
+data/recordings/
 data/weights/*
 !data/weights/.gitkeep
 models/*

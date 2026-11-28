@@ -59,7 +59,9 @@ class GameFSM:
         )
         self._lost_frame_count: int = 0
         self._max_lost_frames: int = 3  # Tolerate up to 3 momentary frame drops
+        self._uncertain_motion_streak: int = 0
         self._last_decision: Optional[DecisionResult] = None
+        self._last_timestamp: float = 0.0
 
     @property
     def current_state(self) -> FSMState:
@@ -76,7 +78,7 @@ class GameFSM:
         """Elapsed time in seconds since settling debounce initiated."""
         if self._settle_start_time is None:
             return 0.0
-        return self._settle_start_time
+        return max(0.0, self._last_timestamp - self._settle_start_time)
 
     @property
     def verifying_count(self) -> int:
@@ -96,9 +98,16 @@ class GameFSM:
         if self._state not in (FSMState.STOPPED, FSMState.PAUSED):
             self._set_state(FSMState.PAUSED, observation=None)
 
-    def resume(self) -> None:
-        """Resumes processing from paused or uncertain state."""
-        if self._state in (FSMState.PAUSED, FSMState.UNCERTAIN):
+    def resume(self, has_geometry: bool = True, orientation_ready: bool = True) -> None:
+        """Resumes processing from paused or uncertain state based on board readiness."""
+        if self._state == FSMState.PAUSED:
+            if not has_geometry:
+                self._set_state(FSMState.LOCATING_BOARD, observation=None)
+            elif not orientation_ready:
+                self._set_state(FSMState.CALIBRATING, observation=None)
+            else:
+                self._set_state(FSMState.STABLE, observation=None)
+        elif self._state == FSMState.UNCERTAIN:
             self._set_state(FSMState.STABLE, observation=None)
 
     def stop(self) -> None:
@@ -190,12 +199,15 @@ class GameFSM:
                 self._set_state(FSMState.CALIBRATING, observation)
 
         elif self._state == FSMState.CALIBRATING:
-            # Check orientation confirmation
-            orientation_ready = (
-                observation.geometry is not None and observation.geometry.orientation_calibrated
-            ) or (observation.geometry_confidence >= 0.70)
+            # Check orientation confirmation. When explicit geometry is attached,
+            # require confirmed orientation calibration so we do not enter STABLE
+            # with an uncalibrated board and flip sides mid-game.
+            if observation.geometry is not None:
+                orientation_ready = bool(observation.geometry.orientation_calibrated)
+            else:
+                orientation_ready = observation.geometry_confidence >= 0.70
 
-            if orientation_ready:
+            if orientation_ready and not active_disturbance:
                 self._set_state(FSMState.STABLE, observation)
 
         elif self._state == FSMState.BOARD_LOST:
@@ -218,7 +230,9 @@ class GameFSM:
                 self._set_state(FSMState.MOVING, observation)
             else:
                 # Check debounce elapsed time
-                elapsed = observation.timestamp - (self._settle_start_time or observation.timestamp)
+                if self._settle_start_time is None:
+                    self._settle_start_time = observation.timestamp
+                elapsed = observation.timestamp - self._settle_start_time
                 if elapsed >= self.config.settling_time_sec:
                     self._verify_buffer.clear()
                     self._verify_buffer.append(observation)
@@ -252,6 +266,13 @@ class GameFSM:
                             decision = self.decision_gate.evaluate(ranked, observation)
                             self._last_decision = decision
 
+                            if decision.status == DecisionStatus.NO_CANDIDATE and changed_sqs:
+                                decision.uncertain_squares = decision.uncertain_squares or sorted(changed_sqs)
+                                decision.rejection_reason = (
+                                    decision.rejection_reason
+                                    or f"Unrecognized or illegal change on {', '.join(decision.uncertain_squares)}"
+                                )
+
                             if self.on_move_decision:
                                 try:
                                     self.on_move_decision(decision, observation)
@@ -261,12 +282,14 @@ class GameFSM:
                             if decision.status == DecisionStatus.ACCEPTED and decision.accepted_hypothesis:
                                 self.game_state_manager.commit(decision.accepted_hypothesis, observation)
                                 self._set_state(FSMState.STABLE, observation)
-                            elif decision.status == DecisionStatus.UNCERTAIN:
+                            elif decision.status in (
+                                DecisionStatus.UNCERTAIN,
+                                DecisionStatus.REJECTED,
+                                DecisionStatus.NO_CANDIDATE,
+                            ):
                                 self._set_state(FSMState.UNCERTAIN, observation)
-                            elif decision.status == DecisionStatus.NO_CANDIDATE:
+                            else:
                                 self._set_state(FSMState.STABLE, observation)
-                            else:  # REJECTED
-                                self._set_state(FSMState.UNCERTAIN, observation)
                     else:
                         self._set_state(FSMState.STABLE, observation)
 
@@ -276,30 +299,25 @@ class GameFSM:
                     self._settle_start_time = None
 
         elif self._state == FSMState.UNCERTAIN:
-            if not active_disturbance and geom_valid:
-                self._verify_buffer.append(observation)
-                if len(self._verify_buffer) >= self.config.verifying_stable_frames:
-                    # Attempt re-evaluation
-                    if (
-                        self.decision_gate is not None
-                        and self.game_state_manager is not None
-                        and self.candidate_generator is not None
-                        and self.scorer is not None
-                    ):
-                        board = self.game_state_manager.current_board
-                        candidates = self.candidate_generator.generate_candidates(board, observation)
-                        ranked = self.scorer.rank_candidates(board, candidates, observation)
-                        decision = self.decision_gate.evaluate(ranked, observation)
-                        self._last_decision = decision
-                        if decision.status == DecisionStatus.ACCEPTED and decision.accepted_hypothesis:
-                            self.game_state_manager.commit(decision.accepted_hypothesis, observation)
-                            self._set_state(FSMState.STABLE, observation)
-                            self._verify_buffer.clear()
-                    else:
-                        self._set_state(FSMState.STABLE, observation)
-                        self._verify_buffer.clear()
+            strong_hand = hand and len(observation.get_occluded_squares() if hasattr(observation, "get_occluded_squares") else []) >= 2
+            high_motion = observation.motion_detected and observation.motion_level >= max(
+                0.10, self.config.motion_diff_threshold * 2.5
+            )
+            mod_motion = observation.motion_level >= (self.config.motion_diff_threshold * 1.45)
+            if mod_motion or hand:
+                self._uncertain_motion_streak += 1
+            else:
+                self._uncertain_motion_streak = 0
+
+            # Immediate re-entry on unmistakable motion/hand; require 3 frames for moderate shimmer
+            if high_motion or strong_hand or self._uncertain_motion_streak >= 3:
+                self._uncertain_motion_streak = 0
+                self._verify_buffer.clear()
+                self._settle_start_time = None
+                self._set_state(FSMState.MOVING, observation)
             else:
                 self._verify_buffer.clear()
 
         observation.fsm_state = self._state
+        self._last_timestamp = observation.timestamp
         return self._state

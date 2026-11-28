@@ -76,3 +76,21 @@ class TestCellRoiCoordinates:
         assert 0.0 <= cx <= 1920.0
         assert 0.0 <= cy <= 1080.0
 
+    def test_base_core_and_padded_edge_extraction(self):
+        extractor = CellRoiExtractor(board_size=640, output_cell_size=(112, 112))
+        # Base core stays strictly inside board_bbox
+        bx1, by1, bx2, by2 = extractor.get_base_core_bbox("a1", BoardOrientation.WHITE_RIGHT)
+        sq_x1, sq_y1, sq_x2, sq_y2 = extractor.get_square_coordinates("a1", BoardOrientation.WHITE_RIGHT)
+        assert sq_x1 < bx1 < bx2 < sq_x2
+        assert sq_y1 < by1 < by2 < sq_y2
+
+        # Padded board warp (800x800, pad=80) supplies real top context for edge square h1 instead of reflection
+        padded = np.zeros((800, 800, 3), dtype=np.uint8)
+        # Put bright marker in top padding strip above h1 (x in [80+560..80+640], y in [40..80])
+        padded[40:80, 640:720] = (10, 200, 10)
+        roi_h1 = extractor.build_cell_roi("h1", BoardOrientation.WHITE_RIGHT)
+        assert roi_h1.extended_bbox[1] < 0
+        patch = extractor.extract_cell_patch(padded, roi_h1)
+        assert patch.shape == (112, 112, 3)
+        assert patch[:25, :, 1].mean() > 100.0
+

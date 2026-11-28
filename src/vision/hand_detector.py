@@ -8,9 +8,12 @@ Implements hand tracking, polygon projection, and per-square occlusion calculati
 
 from __future__ import annotations
 
+import gc
 import logging
+import threading
 from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple
+from pathlib import Path
+from typing import Any, Dict, List, Optional, Tuple
 import cv2
 import numpy as np
 
@@ -185,11 +188,15 @@ class MockHandDetector(BaseHandDetector):
 class MediaPipeHandDetector(BaseHandDetector):
     """MediaPipe-based hand tracker with convex hull projection and occlusion masking."""
 
+    _CACHE_LOCK = threading.Lock()
+    _LANDMARKER_CACHE: Dict[Tuple[str, float, float], Tuple[Any, threading.Lock]] = {}
+
     def __init__(self, config: Optional[HandDetectorConfig] = None) -> None:
         self.config = config or HandDetectorConfig()
         self._mp = None
         self._hands = None
         self._landmarker = None
+        self._landmarker_lock: Optional[threading.Lock] = None
         self._is_tasks_api = False
         self._available = False
 
@@ -199,20 +206,39 @@ class MediaPipeHandDetector(BaseHandDetector):
             task_model_path = Path("data/weights/hand_landmarker.task")
             if hasattr(mp, "tasks") and hasattr(mp.tasks, "vision") and task_model_path.is_file():
                 try:
-                    BaseOptions = mp.tasks.BaseOptions
-                    HandLandmarker = mp.tasks.vision.HandLandmarker
-                    HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
-                    VisionRunningMode = mp.tasks.vision.RunningMode
-
-                    options = HandLandmarkerOptions(
-                        base_options=BaseOptions(model_asset_path=str(task_model_path)),
-                        running_mode=VisionRunningMode.IMAGE,
-                        num_hands=2,
-                        min_hand_detection_confidence=self.config.min_detection_confidence,
-                        min_hand_presence_confidence=self.config.min_tracking_confidence,
-                        min_tracking_confidence=self.config.min_tracking_confidence,
+                    cache_key = (
+                        str(task_model_path),
+                        float(self.config.min_detection_confidence),
+                        float(self.config.min_tracking_confidence),
                     )
-                    self._landmarker = HandLandmarker.create_from_options(options)
+                    with self._CACHE_LOCK:
+                        cached = self._LANDMARKER_CACHE.get(cache_key)
+                        if cached is None:
+                            BaseOptions = mp.tasks.BaseOptions
+                            HandLandmarker = mp.tasks.vision.HandLandmarker
+                            HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+                            VisionRunningMode = mp.tasks.vision.RunningMode
+
+                            options = HandLandmarkerOptions(
+                                base_options=BaseOptions(model_asset_path=str(task_model_path)),
+                                running_mode=VisionRunningMode.IMAGE,
+                                num_hands=2,
+                                min_hand_detection_confidence=self.config.min_detection_confidence,
+                                min_hand_presence_confidence=self.config.min_tracking_confidence,
+                                min_tracking_confidence=self.config.min_tracking_confidence,
+                            )
+                            # Guard MediaPipe SerialDispatcher init from re-entrant GC __del__ deadlock
+                            gc_was_enabled = gc.isenabled()
+                            gc.disable()
+                            try:
+                                landmarker = HandLandmarker.create_from_options(options)
+                            finally:
+                                if gc_was_enabled:
+                                    gc.enable()
+                            cached = (landmarker, threading.Lock())
+                            self._LANDMARKER_CACHE[cache_key] = cached
+
+                    self._landmarker, self._landmarker_lock = cached
                     self._is_tasks_api = True
                     self._available = True
                     logger.info("MediaPipe HandLandmarker (Tasks API) initialized successfully from %s", task_model_path)
@@ -243,6 +269,19 @@ class MediaPipeHandDetector(BaseHandDetector):
     def is_available(self) -> bool:
         return self._available
 
+    def close(self) -> None:
+        """Releases local hand detector references without closing shared Tasks API handles."""
+        # Shared _LANDMARKER_CACHE entries stay alive for process lifetime to avoid MediaPipe SerialDispatcher close() deadlocks
+        self._landmarker = None
+        self._landmarker_lock = None
+        if self._hands is not None:
+            try:
+                self._hands.close()
+            except Exception:
+                pass
+            self._hands = None
+        self._available = False
+
     def detect(
         self,
         frame: Frame,
@@ -272,7 +311,11 @@ class MediaPipeHandDetector(BaseHandDetector):
 
         if self._is_tasks_api and self._landmarker is not None:
             mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
-            detection_result = self._landmarker.detect(mp_image)
+            if self._landmarker_lock is not None:
+                with self._landmarker_lock:
+                    detection_result = self._landmarker.detect(mp_image)
+            else:
+                detection_result = self._landmarker.detect(mp_image)
             if not detection_result.hand_landmarks:
                 return HandDetection(
                     is_hand_present=False,
@@ -427,25 +470,34 @@ class ColorSilhouetteHandDetector(BaseHandDetector):
                 polygon_board=None,
             )
 
-        # Merge all significant contours
-        all_pts = np.vstack(significant_contours)
-        hull = cv2.convexHull(all_pts)
-
-        x, y, bw, bh = cv2.boundingRect(hull)
-        bbox = (x, y, x + bw, y + bh)
-
         board_size = geometry.target_size if geometry else 640
         board_mask = np.zeros((board_size, board_size), dtype=np.uint8)
         polygon_board: Optional[List[Tuple[float, float]]] = None
 
         if geometry is not None and geometry.homography_matrix is not None:
             H = np.array(geometry.homography_matrix, dtype=np.float32)
-            pts_reshaped = hull.reshape(-1, 1, 2).astype(np.float32)
-            pts_board = cv2.perspectiveTransform(pts_reshaped, H).reshape(-1, 2)
-            polygon_board = [(float(pt[0]), float(pt[1])) for pt in pts_board]
+            # Restrict skin silhouette analysis strictly inside the rectified board space
+            # so warm wooden table regions outside the board do not hull across all 64 squares.
+            warped_skin = cv2.warpPerspective(skin_mask, H, (board_size, board_size))
+            board_contours, _ = cv2.findContours(warped_skin, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+            min_board_hand_area = max(300.0, (board_size * board_size) * 0.008)
+            valid_board_contours = [c for c in board_contours if cv2.contourArea(c) >= min_board_hand_area]
 
-            pts_int = np.int32([pts_board])
-            cv2.fillPoly(board_mask, pts_int, 255)
+            if not valid_board_contours:
+                return HandDetection(
+                    is_hand_present=False,
+                    confidence=0.0,
+                    landmarks=[],
+                    bounding_box=None,
+                    occluded_squares=[],
+                    occlusion_ratios={sq: 0.0 for sq in CHESS_SQUARES},
+                    polygon_board=None,
+                )
+
+            all_board_pts = np.vstack(valid_board_contours)
+            board_hull = cv2.convexHull(all_board_pts)
+            polygon_board = [(float(pt[0][0]), float(pt[0][1])) for pt in board_hull]
+            cv2.fillPoly(board_mask, [np.int32(board_hull)], 255)
 
             margin = self.config.dilation_margin_px
             if margin > 0:
@@ -459,8 +511,21 @@ class ColorSilhouetteHandDetector(BaseHandDetector):
                 occlusion_threshold=self.config.occlusion_threshold,
                 board_size=board_size,
             )
-            is_present = np.any(board_mask > 0)
+            is_present = bool(np.any(board_mask > 0))
+            if geometry.inverse_homography is not None:
+                H_inv = np.array(geometry.inverse_homography, dtype=np.float32)
+                img_pts = cv2.perspectiveTransform(board_hull.astype(np.float32), H_inv)
+                x, y, bw, bh = cv2.boundingRect(img_pts)
+                bbox = (x, y, x + bw, y + bh)
+            else:
+                x, y, bw, bh = cv2.boundingRect(board_hull)
+                bbox = (x, y, x + bw, y + bh)
         else:
+            # No board geometry locked yet: take largest skin contour rather than spanning entire table
+            largest = max(significant_contours, key=cv2.contourArea)
+            hull = cv2.convexHull(largest)
+            x, y, bw, bh = cv2.boundingRect(hull)
+            bbox = (x, y, x + bw, y + bh)
             occluded_squares = []
             occlusion_ratios = {sq: 0.0 for sq in CHESS_SQUARES}
             is_present = True
@@ -521,6 +586,15 @@ class HandDetector(BaseHandDetector):
     @property
     def active_backend(self) -> str:
         return self.backend_name
+
+    @property
+    def underlying_detector(self) -> BaseHandDetector:
+        return self._detector
+
+    def close(self) -> None:
+        """Closes the underlying hand detector backend if supported."""
+        if hasattr(self._detector, "close"):
+            self._detector.close()
 
     def detect(
         self,

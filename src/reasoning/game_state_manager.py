@@ -236,6 +236,15 @@ class GameStateManager:
             logger.info("Rolled back move ply=%d (%s)", popped.ply, popped.move_san)
             return popped
 
+    def reset(self, initial_fen: str = chess.STARTING_FEN) -> None:
+        """Resets board, move history, and idempotency keys back to initial position."""
+        with self._lock:
+            self._initial_fen = initial_fen
+            self._board = chess.Board(initial_fen)
+            self._history.clear()
+            self._committed_keys.clear()
+            logger.info("GameStateManager reset to initial position (FEN=%s)", initial_fen)
+
     def export_pgn(self, headers: Optional[Dict[str, str]] = None) -> str:
         """Exports the recorded game history as a standard PGN string.
 

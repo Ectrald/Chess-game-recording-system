@@ -30,16 +30,23 @@ class TestOrientationResolver:
         orientation = resolver.resolve(rot180)
         assert orientation == BoardOrientation.BLACK_BOTTOM
 
-    def test_reject_90_rotation(self, initial_flat_board):
+    def test_sideways_90_rotation_white_left(self, initial_flat_board):
         rot90 = cv2.rotate(initial_flat_board, cv2.ROTATE_90_CLOCKWISE)
         resolver = OrientationResolver()
         orientation = resolver.resolve(rot90)
-        assert orientation == BoardOrientation.UNKNOWN
+        assert orientation == BoardOrientation.WHITE_LEFT
 
-    def test_reject_270_rotation(self, initial_flat_board):
+    def test_sideways_270_rotation_white_right(self, initial_flat_board):
         rot270 = cv2.rotate(initial_flat_board, cv2.ROTATE_90_COUNTERCLOCKWISE)
         resolver = OrientationResolver()
         orientation = resolver.resolve(rot270)
+        assert orientation == BoardOrientation.WHITE_RIGHT
+
+    def test_reject_sideways_when_disabled(self, initial_flat_board):
+        rot90 = cv2.rotate(initial_flat_board, cv2.ROTATE_90_CLOCKWISE)
+        cfg = OrientationConfig(allow_sideways=False)
+        resolver = OrientationResolver(config=cfg)
+        orientation = resolver.resolve(rot90)
         assert orientation == BoardOrientation.UNKNOWN
 
     def test_user_preference_override(self, initial_flat_board):
@@ -54,6 +61,14 @@ class TestOrientationResolver:
         is_valid, br, bl = resolver.check_corner_color_validity(initial_flat_board)
         assert is_valid is True
         assert br > bl + 15.0  # Light h1 square is significantly brighter than dark a1
+
+    def test_sideways_preserved_with_dark_bezel_padding(self, initial_flat_board):
+        rot270 = cv2.rotate(initial_flat_board, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        # Simulate outward manual corner adjustment adding dark plastic border bezel around warped board
+        padded = cv2.copyMakeBorder(rot270, 48, 48, 48, 48, cv2.BORDER_CONSTANT, value=(0, 0, 0))
+        warped_bezel = cv2.resize(padded, (640, 640), interpolation=cv2.INTER_AREA)
+        resolver = OrientationResolver()
+        assert resolver.resolve(warped_bezel) == BoardOrientation.WHITE_RIGHT
 
     def test_fallback_when_inconclusive(self):
         # Uniform gray image has zero mass difference and equal corner intensities

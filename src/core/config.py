@@ -44,6 +44,7 @@ class OrientationConfig(BaseModel):
     """Configuration for board perspective orientation resolution."""
     color_check_enabled: bool = Field(default=True)
     mass_distribution_enabled: bool = Field(default=True)
+    allow_sideways: bool = Field(default=True, description="Allow 90°/270° sideways board orientations")
     fallback_orientation: str = Field(default="unknown")
 
 
@@ -70,6 +71,22 @@ class ClassifierConfig(BaseModel):
     model_path: str = Field(
         default="models/piece_classifier.onnx",
         description="Path to ONNX weights model file",
+    )
+    chessq_model_path: str = Field(
+        default="models/chessq_vit_int8.onnx",
+        description="Path to holistic ViT whole-board ChessQ-Lite ONNX weights",
+    )
+    dinov2_model_path: str = Field(
+        default="models/dinov2_small_int8.onnx",
+        description="Path to DINOv2-Small INT8 ONNX model for semantic per-square change verification",
+    )
+    use_chessq_whole_board: bool = Field(
+        default=True,
+        description="Use whole-board ViT classifier (ChessQ-Lite) when weights are present",
+    )
+    use_dinov2_change_detector: bool = Field(
+        default=True,
+        description="Use DINOv2-Small patch cosine change map to disambiguate same-color translucent pieces",
     )
     architecture: str = Field(
         default="chesscog",
@@ -185,7 +202,7 @@ class TemporalConfig(BaseModel):
         description="Differential optical change threshold to enter MOVING state",
     )
     verifying_stable_frames: int = Field(
-        default=8,
+        default=5,
         ge=1,
         le=60,
         description="Number of consecutive stable frames required to confirm VERIFYING state",
@@ -201,6 +218,28 @@ class TemporalConfig(BaseModel):
         ge=0.01,
         le=1.0,
         description="Exponential moving average alpha factor for temporal motion smoothing",
+    )
+    recovery_grace_sec: float = Field(
+        default=2.0,
+        ge=0.0,
+        le=15.0,
+        description="Grace window before escalating large disturbances (knocked pieces) to UNCERTAIN UI",
+    )
+    auto_takeback_enabled: bool = Field(
+        default=True,
+        description="Allow automatic rollback when last committed move is physically taken back",
+    )
+    drift_check_interval_frames: int = Field(
+        default=10,
+        ge=1,
+        le=120,
+        description="Frame interval between lightweight STABLE board drift checks",
+    )
+    hand_idle_skip_stride: int = Field(
+        default=3,
+        ge=1,
+        le=15,
+        description="Run hand detector every N frames when board is STABLE with minimal motion",
     )
 
 

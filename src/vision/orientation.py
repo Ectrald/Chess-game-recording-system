@@ -27,11 +27,13 @@ class OrientationResolver:
     ) -> None:
         self.color_check_enabled = True
         self.mass_distribution_enabled = True
+        self.allow_sideways = True
         self.fallback = BoardOrientation.UNKNOWN
 
         if config is not None:
             self.color_check_enabled = config.color_check_enabled
             self.mass_distribution_enabled = config.mass_distribution_enabled
+            self.allow_sideways = getattr(config, "allow_sideways", True)
             try:
                 self.fallback = BoardOrientation(config.fallback_orientation)
             except ValueError:
@@ -72,6 +74,29 @@ class OrientationResolver:
         br_mean = float(np.mean(br_patch)) if br_patch.size > 0 else 0.0
         bl_mean = float(np.mean(bl_patch)) if bl_patch.size > 0 else 0.0
 
+        # If manual outward corners landed on a dark outer bezel, fall back to central 4x4 checkerboard parity
+        if min(br_mean, bl_mean) < 40.0:
+            even_vals = []
+            odd_vals = []
+            for r in range(2, 6):
+                cy1 = int(round((r + 0.30) * cell_h))
+                cy2 = int(round((r + 0.70) * cell_h))
+                for c in range(2, 6):
+                    cx1 = int(round((c + 0.30) * cell_w))
+                    cx2 = int(round((c + 0.70) * cell_w))
+                    patch = gray[cy1:cy2, cx1:cx2]
+                    if patch.size > 0:
+                        val = float(np.mean(patch))
+                        if (r + c) % 2 == 0:
+                            even_vals.append(val)
+                        else:
+                            odd_vals.append(val)
+            if even_vals and odd_vals:
+                even_med = float(np.median(even_vals))
+                odd_med = float(np.median(odd_vals))
+                if max(even_med, odd_med) > max(br_mean, bl_mean):
+                    br_mean, bl_mean = even_med, odd_med
+
         # Bottom-right must be significantly lighter than bottom-left
         is_valid = (br_mean - bl_mean) >= self.color_diff_threshold
         return is_valid, br_mean, bl_mean
@@ -107,32 +132,64 @@ class OrientationResolver:
         else:
             return BoardOrientation.BLACK_BOTTOM, top_mean, bot_mean
 
+    def check_sideways_mass_distribution(self, board_image: np.ndarray) -> Tuple[BoardOrientation, float, float]:
+        """Analyzes piece luminance between left columns (0..2) and right columns (6..8) for sideways boards.
+
+        Returns:
+            Tuple of (detected_orientation, left_mean, right_mean).
+        """
+        gray = cv2.cvtColor(board_image, cv2.COLOR_BGR2GRAY) if board_image.ndim == 3 else board_image
+        _, w = gray.shape[:2]
+        col_2w = int(round(w * 2.0 / 8.0))
+
+        left_cols = gray[:, 0:col_2w]
+        right_cols = gray[:, w - col_2w : w]
+
+        left_mean = float(np.mean(left_cols))
+        right_mean = float(np.mean(right_cols))
+
+        diff = right_mean - left_mean
+        if abs(diff) < self.mass_diff_threshold:
+            return BoardOrientation.UNKNOWN, left_mean, right_mean
+
+        if diff > 0:
+            return BoardOrientation.WHITE_RIGHT, left_mean, right_mean
+        else:
+            return BoardOrientation.WHITE_LEFT, left_mean, right_mean
+
     def resolve(
         self,
         board_image: np.ndarray,
         user_preference: Optional[BoardOrientation] = None,
     ) -> BoardOrientation:
-        """Resolves board orientation using the 3-factor cascade.
-        
+        """Resolves board orientation using the 3-factor cascade (0°, 90°, 180°, 270°).
+
         1. If user_preference is provided and valid, returns it immediately.
-        2. Corner square color test: checks if bottom-right square is light (rejects 90° / 270°).
-        3. Mass distribution test: compares top rows vs bottom rows (distinguishes 0° vs 180°).
+        2. Corner square color test: distinguishes standard (0°/180°) vs sideways (90°/270°).
+        3. Mass distribution test: distinguishes WHITE_BOTTOM vs BLACK_BOTTOM (or WHITE_RIGHT vs WHITE_LEFT).
         4. Fallback to configured default or UNKNOWN.
         """
         # Factor 1: Explicit user preference
         if user_preference is not None and user_preference != BoardOrientation.UNKNOWN:
             return user_preference
 
+        is_sideways = False
         # Factor 2: Corner square color validity
         if self.color_check_enabled:
-            is_valid, _, _ = self.check_corner_color_validity(board_image)
+            is_valid, br_mean, bl_mean = self.check_corner_color_validity(board_image)
             if not is_valid:
-                # 90° or 270° orientation detected
-                return BoardOrientation.UNKNOWN
+                # Bottom-left light and bottom-right dark -> 90° or 270° sideways board
+                if self.allow_sideways and (bl_mean - br_mean) >= self.color_diff_threshold:
+                    is_sideways = True
+                else:
+                    return BoardOrientation.UNKNOWN
 
         # Factor 3: Mass distribution analysis
         if self.mass_distribution_enabled:
-            detected, _, _ = self.check_mass_distribution(board_image)
+            if is_sideways:
+                detected, _, _ = self.check_sideways_mass_distribution(board_image)
+            else:
+                detected, _, _ = self.check_mass_distribution(board_image)
             if detected != BoardOrientation.UNKNOWN:
                 return detected
 

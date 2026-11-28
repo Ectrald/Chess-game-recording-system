@@ -8,13 +8,14 @@ Implements localizer hierarchy according to:
 from __future__ import annotations
 
 from abc import ABC, abstractmethod
+from collections import deque
 import math
 from pathlib import Path
 from typing import Dict, List, Optional, Sequence, Tuple, Union
 import cv2
 import numpy as np
 
-from src.core.config import VisionConfig
+from src.core.config import LocalizerConfig, VisionConfig
 from src.core.datatypes import BoardGeometry, BoardOrientation, Frame
 from src.vision.corner_refinement import CornerRefiner, order_corners_canonical, refine_subpixel_corners
 from src.vision.homography import GeometryTransformer
@@ -92,6 +93,7 @@ class CoarseToFineLocalizer(BaseBoardLocalizer):
         self.target_size = target_size
         self.min_area_ratio = min_area_ratio
         self.yolo_model = None
+        self._yolo_miss_count = 0
 
         canny_low = 50
         canny_high = 150
@@ -136,14 +138,19 @@ class CoarseToFineLocalizer(BaseBoardLocalizer):
 
         if self.yolo_model is not None:
             try:
+                eff_conf = min(self.yolo_confidence, 0.25)
                 results = self.yolo_model.predict(
                     source=image,
-                    conf=self.yolo_confidence,
+                    conf=eff_conf,
                     verbose=False,
                 )
                 if results and len(results[0].boxes) > 0:
                     boxes = results[0].boxes
-                    if len(boxes) >= 4:
+                    names = getattr(self.yolo_model, "names", {}) or {}
+                    is_corner_model = any("corner" in str(v).lower() for v in names.values()) and not any(
+                        "board" in str(v).lower() for v in names.values()
+                    )
+                    if is_corner_model and len(boxes) >= 4:
                         all_xyxy = boxes.xyxy.cpu().numpy()
                         x1 = int(np.min(all_xyxy[:, 0]))
                         y1 = int(np.min(all_xyxy[:, 1]))
@@ -153,6 +160,7 @@ class CoarseToFineLocalizer(BaseBoardLocalizer):
                         box = boxes[0]
                         xyxy = box.xyxy[0].cpu().numpy()
                         x1, y1, x2, y2 = [int(v) for v in xyxy]
+                    self._yolo_miss_count = 0
                     # Add 8% padding margin
                     pad_x = int((x2 - x1) * 0.08)
                     pad_y = int((y2 - y1) * 0.08)
@@ -162,8 +170,9 @@ class CoarseToFineLocalizer(BaseBoardLocalizer):
                         min(w, x2 + pad_x),
                         min(h, y2 + pad_y),
                     )
+                return None
             except Exception:
-                pass
+                return None
 
         # Fallback coarse detector using grid-overlap saliency and Hough lines
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY) if image.ndim == 3 else image
@@ -247,6 +256,8 @@ class CoarseToFineLocalizer(BaseBoardLocalizer):
     def locate(self, frame: Frame) -> Optional[BoardGeometry]:
         # Stage 1: Coarse BBox
         roi_bbox = self._detect_coarse_bbox(frame.image)
+        if roi_bbox is None and self.yolo_model is not None:
+            return None
 
         # Stage 2: Fine Corner Refinement inside ROI
         corners = self.refiner.find_board_corners(frame.image, roi_bbox=roi_bbox)
@@ -292,7 +303,11 @@ class ManualCornerLocalizer(BaseBoardLocalizer):
         if self.subpixel_refinement:
             pts = refine_subpixel_corners(frame.image, pts)
 
-        is_valid, _, _ = GeometryTransformer.validate_quadrilateral(pts)
+        is_valid, _, _ = GeometryTransformer.validate_quadrilateral(
+            pts,
+            image_shape=(frame.height, frame.width),
+            min_area_ratio=0.05,
+        )
         if not is_valid:
             return None
 
@@ -358,14 +373,133 @@ class ArucoLocalizer(BaseBoardLocalizer):
         )
 
 
+class BoardGeometryTracker:
+    """Tracks incremental camera tilt or table shifts using median-smoothed local corner re-refinement."""
+
+    def __init__(
+        self,
+        refiner: Optional[CornerRefiner] = None,
+        window_size: int = 5,
+        min_samples: int = 3,
+        update_threshold_px: float = 9.5,
+        jump_limit_px: float = 95.0,
+        max_lost_checks: int = 6,
+        roi_margin_ratio: float = 0.14,
+    ) -> None:
+        self.refiner = refiner or CornerRefiner()
+        self.window_size = max(3, int(window_size))
+        self.min_samples = max(2, int(min_samples))
+        self.update_threshold_px = float(update_threshold_px)
+        self.jump_limit_px = float(jump_limit_px)
+        self.max_lost_checks = int(max_lost_checks)
+        self.roi_margin_ratio = float(roi_margin_ratio)
+        self._history: deque[List[Tuple[float, float]]] = deque(maxlen=self.window_size)
+        self._lost_checks: int = 0
+
+    def reset(self) -> None:
+        """Clears rolling corner history and lost counter."""
+        self._history.clear()
+        self._lost_checks = 0
+
+    def check_drift(
+        self,
+        frame: Frame,
+        current_geometry: BoardGeometry,
+        min_area_ratio: float = 0.05,
+    ) -> Tuple[Optional[BoardGeometry], str]:
+        """Re-localizes corners inside expanded current ROI and detects camera/table drift.
+
+        Returns:
+            Tuple (new_geometry_or_none, status) where status is 'unchanged', 'updated', or 'lost'.
+        """
+        cur_corners = order_corners_canonical(current_geometry.corners)
+        xs = [c[0] for c in cur_corners]
+        ys = [c[1] for c in cur_corners]
+        bw = max(1.0, max(xs) - min(xs))
+        bh = max(1.0, max(ys) - min(ys))
+        pad_x = bw * self.roi_margin_ratio
+        pad_y = bh * self.roi_margin_ratio
+        roi_bbox = (
+            max(0, int(round(min(xs) - pad_x))),
+            max(0, int(round(min(ys) - pad_y))),
+            min(frame.width, int(round(max(xs) + pad_x))),
+            min(frame.height, int(round(max(ys) + pad_y))),
+        )
+
+        candidate = self.refiner.find_board_corners(frame.image, roi_bbox=roi_bbox)
+        if candidate is None or len(candidate) != 4:
+            self._lost_checks += 1
+            if self._lost_checks >= self.max_lost_checks:
+                return None, "lost"
+            return None, "unchanged"
+
+        ordered = order_corners_canonical(candidate)
+        is_valid, _, _ = GeometryTransformer.validate_quadrilateral(
+            ordered,
+            image_shape=(frame.height, frame.width),
+            min_area_ratio=min_area_ratio,
+        )
+        if not is_valid:
+            self._lost_checks += 1
+            if self._lost_checks >= self.max_lost_checks:
+                return None, "lost"
+            return None, "unchanged"
+
+        raw_shift = max(
+            math.hypot(nc[0] - oc[0], nc[1] - oc[1]) for nc, oc in zip(ordered, cur_corners)
+        )
+        if raw_shift > self.jump_limit_px:
+            self._lost_checks += 1
+            if self._lost_checks >= self.max_lost_checks:
+                return None, "lost"
+            return None, "unchanged"
+
+        self._lost_checks = 0
+        self._history.append(ordered)
+        if len(self._history) < self.min_samples:
+            return None, "unchanged"
+
+        med_corners: List[Tuple[float, float]] = []
+        for idx in range(4):
+            mx = float(np.median([sample[idx][0] for sample in self._history]))
+            my = float(np.median([sample[idx][1] for sample in self._history]))
+            med_corners.append((mx, my))
+
+        shifts = [
+            math.hypot(mc[0] - oc[0], mc[1] - oc[1]) for mc, oc in zip(med_corners, cur_corners)
+        ]
+        med_shift = max(shifts)
+        mean_shift = sum(shifts) / 4.0
+        if med_shift < self.update_threshold_px or mean_shift < (self.update_threshold_px * 0.72):
+            return None, "unchanged"
+
+        updated_geom = GeometryTransformer.build_board_geometry(
+            corners=med_corners,
+            target_size=current_geometry.target_size,
+            image_shape=(frame.height, frame.width),
+            min_area_ratio=min_area_ratio,
+            orientation=current_geometry.orientation,
+            detection_method=current_geometry.detection_method,
+        )
+        if not updated_geom.is_valid:
+            return None, "unchanged"
+        self._history.clear()
+        self._history.append(med_corners)
+        return updated_geom, "updated"
+
+
 def create_board_localizer(
-    config: Union[VisionConfig, Dict[str, Any]],
+    config: Union[VisionConfig, LocalizerConfig, Dict[str, Any]],
 ) -> BaseBoardLocalizer:
     """Factory creating localizer strategy from configuration settings."""
     if isinstance(config, VisionConfig):
         mode = config.localizer.mode
         yolo_path = config.localizer.yolo_model_path
         yolo_conf = config.localizer.yolo_confidence
+    elif isinstance(config, LocalizerConfig):
+        mode = config.mode
+        yolo_path = config.yolo_model_path
+        yolo_conf = config.yolo_confidence
     elif isinstance(config, dict):
         loc_cfg = config.get("localizer", {})
         mode = loc_cfg.get("mode", "coarse_to_fine")

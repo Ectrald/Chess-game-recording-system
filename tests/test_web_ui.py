@@ -227,3 +227,242 @@ def test_action_set_corners_endpoint(client: TestClient, orchestrator: SystemOrc
         json={"corners": [[0.0, 0.0], [10.0, 0.0], [20.0, 0.0], [30.0, 0.0]]},
     )
     assert bad_poly.status_code == 400
+
+
+def test_state_payload_with_uncertain_candidates(client: TestClient, orchestrator: SystemOrchestrator) -> None:
+    """Verifies get_state_payload serializes MoveHypothesis candidates using total_score without AttributeError."""
+    from src.core.datatypes import DecisionResult, DecisionStatus, MoveHypothesis
+
+    hypo = MoveHypothesis(
+        move_uci="e2e4",
+        move_san="e4",
+        changed_squares=["e2", "e4"],
+        score_visual=0.72,
+        total_score=0.75,
+    )
+    orchestrator._active_uncertainty = True
+    orchestrator._last_decision = DecisionResult(
+        status=DecisionStatus.UNCERTAIN,
+        top_hypotheses=[hypo],
+        margin=0.05,
+        rejection_reason="Margin below threshold",
+    )
+
+    response = client.get("/api/state")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["active_uncertainty"] is True
+    assert len(data["uncertain_candidates"]) == 1
+    assert data["uncertain_candidates"][0]["uci"] == "e2e4"
+    assert data["uncertain_candidates"][0]["score"] == 0.75
+
+
+def test_state_payload_with_analysis_result(client: TestClient, orchestrator: SystemOrchestrator) -> None:
+    """Verifies get_state_payload serializes AnalysisResult using eval_after fields without AttributeError."""
+    from src.core.datatypes import AnalysisResult, EngineEvaluation, EngineTaskStatus, MoveQuality
+
+    orchestrator._latest_eval = AnalysisResult(
+        event_id="evt-1",
+        ply=1,
+        move_uci="e2e4",
+        status=EngineTaskStatus.COMPLETED,
+        eval_after=EngineEvaluation(eval_cp=35, depth=12, best_move_uci="e7e5"),
+        quality=MoveQuality.BEST,
+    )
+
+    response = client.get("/api/state")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["engine_eval"]["score_cp"] == 35
+    assert data["engine_eval"]["depth"] == 12
+    assert data["engine_eval"]["best_move"] == "e7e5"
+    assert data["engine_eval"]["quality"] == "best"
+
+
+def test_web_board_square_color_parity(client: TestClient) -> None:
+    """Verifies FIDE square coloring in Web UI JS: a1 dark (f=0,r=1), h1 light (f=7,r=1)."""
+    response = client.get("/static/js/app.js")
+    assert response.status_code == 200
+    assert "const isLight = (f + r) % 2 === 0;" in response.text
+
+
+def test_state_payload_includes_uncertainty_reason_and_squares(
+    client: TestClient, orchestrator: SystemOrchestrator
+) -> None:
+    """Verifies /api/state exposes arbiter rejection reason and affected squares for illegal moves."""
+    from src.core.datatypes import DecisionResult, DecisionStatus
+
+    orchestrator._active_uncertainty = True
+    orchestrator._last_decision = DecisionResult(
+        status=DecisionStatus.UNCERTAIN,
+        rejection_reason="Illegal move on squares c1, f4",
+        uncertain_squares=["c1", "f4"],
+        top_hypotheses=[],
+    )
+    response = client.get("/api/state")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["active_uncertainty"] is True
+    assert data["uncertainty_reason"] == "Illegal move on squares c1, f4"
+    assert data["uncertain_squares"] == ["c1", "f4"]
+    assert data["uncertain_candidates"] == []
+
+
+def test_start_paused_and_manual_calibrate_while_paused(
+    orchestrator: SystemOrchestrator,
+) -> None:
+    """Starts paused with no auto-calibration, then calibrates manually on the latest frame."""
+    import cv2
+    from src.core.datatypes import Frame
+    from src.vision.synthetic_board import SyntheticBoardGenerator
+
+    app = create_web_app(orchestrator=orchestrator, start_worker=False, start_paused=True)
+    client = TestClient(app)
+
+    state = client.get("/api/state").json()
+    assert state["is_paused"] is True
+    assert state["fsm_state"] == "paused"
+
+    gen = SyntheticBoardGenerator(canvas_width=640, canvas_height=480, fps=10.0)
+    raw_frame: Frame = gen.render_frame(0)
+
+    # Processing frames while paused must NOT auto-calibrate board geometry
+    out_state = orchestrator.process_frame(raw_frame)
+    assert out_state.board_detected is False
+    assert orchestrator._board_geometry is None
+
+    # Manual calibration during pause detects geometry on latest frame while keeping pause active
+    cal_resp = client.post("/api/action/calibrate")
+    assert cal_resp.status_code == 200
+    cal_data = cal_resp.json()
+    assert cal_data["success"] is True
+    assert cal_data["board_detected"] is True
+    assert orchestrator._is_paused is True
+
+
+def test_sessions_new_resume_and_reset(
+    client: TestClient,
+    orchestrator: SystemOrchestrator,
+) -> None:
+    """Verifies new session creation, resuming a past session, and resetting current session."""
+    first_id = orchestrator.session_id
+    orchestrator.state_manager.manual_commit("e2e4")
+    orchestrator.state_manager.manual_commit("e7e5")
+    assert orchestrator.state_manager.ply == 2
+
+    # Move history must include fen_after for move-by-move board scrubbing
+    s0 = client.get("/api/state").json()
+    assert s0["initial_fen"] == chess.STARTING_FEN
+    assert len(s0["move_history"]) == 2
+    assert "fen_after" in s0["move_history"][1]
+
+    # Create a new session -> saves previous, resets board to ply 0, starts paused
+    new_resp = client.post(
+        "/api/sessions/new",
+        json={"white_player": "Alice", "black_player": "Bob", "pause": True},
+    )
+    assert new_resp.status_code == 200
+    second_id = new_resp.json()["session_id"]
+    assert second_id != first_id
+    assert orchestrator.state_manager.ply == 0
+    assert orchestrator._is_paused is True
+
+    # Commit one move in second session then reset back to starting position
+    orchestrator.state_manager.manual_commit("d2d4")
+    assert orchestrator.state_manager.ply == 1
+    reset_resp = client.post("/api/action/reset_session")
+    assert reset_resp.status_code == 200
+    assert orchestrator.state_manager.ply == 0
+    assert orchestrator.state_manager.current_fen == chess.STARTING_FEN
+
+    # List sessions and resume the first session cleanly
+    list_resp = client.get("/api/sessions")
+    assert list_resp.status_code == 200
+    sessions = {s["session_id"]: s for s in list_resp.json()["sessions"]}
+    assert first_id in sessions
+    assert second_id in sessions
+    assert sessions[first_id]["total_plies"] == 2
+
+    res_resp = client.post(f"/api/sessions/{first_id}/resume")
+    assert res_resp.status_code == 200
+    assert res_resp.json()["ply"] == 2
+    assert orchestrator.session_id == first_id
+    assert orchestrator.state_manager.ply == 2
+
+
+def test_video_recording_upload_and_transcribe_pipeline(
+    client: TestClient,
+    orchestrator: SystemOrchestrator,
+    tmp_path: Path,
+) -> None:
+    """Verifies raw video upload, download, source switching, recording stop/start, and background decoding."""
+    import cv2
+    from src.vision.synthetic_board import SyntheticBoardGenerator
+
+    # 1. Start and stop raw video recording using an active frame dimension
+    orchestrator._last_raw_frame = SyntheticBoardGenerator(canvas_width=320, canvas_height=240, fps=10.0).render_frame(0)
+    start_rec = client.post("/api/recording/start")
+    assert start_rec.status_code == 200
+    assert start_rec.json()["recording"]["is_recording"] is True
+
+    stop_rec = client.post("/api/recording/stop")
+    assert stop_rec.status_code == 200
+    rec_meta = stop_rec.json()["video"]
+    assert Path(rec_meta["path"]).is_file()
+    dl_resp = client.get(rec_meta["download_url"])
+    assert dl_resp.status_code == 200
+
+    # 2. Generate a short synthetic game MP4, upload without multipart, and transcribe
+    pgn_file = Path("data/ground_truth/test_short_game.pgn")
+    gen = SyntheticBoardGenerator(canvas_width=640, canvas_height=480, fps=6.0)
+    if pgn_file.is_file():
+        gen.set_game_from_pgn(str(pgn_file))
+    vid_src = tmp_path / "sample_game.mp4"
+    vw = cv2.VideoWriter(str(vid_src), cv2.VideoWriter_fourcc(*"mp4v"), 6.0, (640, 480))
+    for i in range(min(30, gen.total_frames)):
+        vw.write(gen.render_frame(i).image)
+    vw.release()
+
+    up_resp = client.post(
+        "/api/video/upload?filename=sample_game.mp4",
+        content=vid_src.read_bytes(),
+    )
+    assert up_resp.status_code == 200
+    uploaded_path = up_resp.json()["path"]
+    assert Path(uploaded_path).is_file()
+
+    # Switch live video source to uploaded video
+    sw_resp = client.post("/api/video/source", json={"source": uploaded_path})
+    assert sw_resp.status_code == 200
+    assert sw_resp.json()["source_type"] == "file"
+
+    # Run background transcription and poll until completion
+    tr_resp = client.post(
+        "/api/video/transcribe",
+        json={"video_path": uploaded_path, "white_player": "VidW", "black_player": "VidB"},
+    )
+    assert tr_resp.status_code == 200
+    deadline = time.monotonic() + 30.0
+    job_status = tr_resp.json()
+    while time.monotonic() < deadline and job_status["status"] == "running":
+        time.sleep(0.1)
+        job_status = client.get("/api/video/transcribe/status").json()
+
+    assert job_status["status"] == "completed"
+    assert job_status["progress_pct"] == 100.0
+    assert orchestrator.session_id == job_status["session_id"]
+
+    # Devices endpoint responds cleanly even in headless test container
+    dev_resp = client.get("/api/video/devices")
+    assert dev_resp.status_code == 200
+    assert "devices" in dev_resp.json()
+
+    # New UI controls present in index.html & app.js
+    html = client.get("/").text
+    for elem_id in ("videoDeviceSelect", "btnResetSession", "btnNewSession", "btnRecordVideo", "btnCalibrateNow", "btnReplayPrev", "btnToggleUncertain"):
+        assert elem_id in html
+    assert "uncertain-panel" in html
+    js = client.get("/static/js/app.js").text
+    assert "setViewPly" in js
+    assert "applyUncertainMinimizeState" in js
+

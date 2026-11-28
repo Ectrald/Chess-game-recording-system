@@ -40,6 +40,8 @@ class BoardOrientation(str, Enum):
     UNKNOWN = "unknown"
     WHITE_BOTTOM = "white_bottom"  # White camp at bottom (ranks 1-2 at bottom, ranks 7-8 at top)
     BLACK_BOTTOM = "black_bottom"  # Black camp at bottom (ranks 7-8 at bottom, ranks 1-2 at top)
+    WHITE_RIGHT = "white_right"    # Sideways 90° CCW: White camp at right (h1 top-right, a1 bottom-right)
+    WHITE_LEFT = "white_left"      # Sideways 90° CW: White camp at left (a1 top-left, h1 bottom-left)
 
 
 class FSMState(str, Enum):
@@ -620,9 +622,13 @@ class MoveEvent(BaseModel):
     Mapped to Table 2.2 'MoveEvent': ply, FEN before/after, SAN/UCI, confidence, evidence frames.
     """
     event_id: str = Field(default_factory=lambda: uuid.uuid4().hex, description="Unique UUID event identifier")
+    event_type: Literal["move", "rollback", "illegal_attempt"] = Field(
+        default="move",
+        description="Audit event kind: 'move' (committed), 'rollback' (operator/takeback undo), or 'illegal_attempt'",
+    )
     ply: int = Field(ge=1, description="Half-move index (1 = White move 1, 2 = Black move 1, ...)")
     fen_before: str = Field(description="FEN position string prior to move")
-    move_uci: str = Field(pattern=r"^[a-h][1-8][a-h][1-8][qrbn]?$", description="UCI move (e.g. 'e7e8q')")
+    move_uci: str = Field(pattern=r"^(?:[a-h][1-8][a-h][1-8][qrbn]?|0000)$", description="UCI move (e.g. 'e7e8q' or '0000' for illegal anomaly)")
     move_san: str = Field(description="SAN move string (e.g. 'e8=Q+', 'O-O')")
     fen_after: str = Field(description="FEN position string after move execution")
     confidence: float = Field(ge=0.0, le=1.0, description="Confidence margin Delta: S(m1) - S(m2)")

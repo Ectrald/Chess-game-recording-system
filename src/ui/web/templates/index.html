@@ -1,10 +1,10 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>{{ title }} - Live Web Dashboard</title>
-  <link rel="stylesheet" href="/static/css/style.css">
+  <link rel="stylesheet" href="/static/css/style.css?v=5">
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>♞</text></svg>">
 </head>
 <body>
@@ -14,7 +14,7 @@
       <span class="brand-icon">♞</span>
       <div>
         <h1 class="brand-title">{{ title }}</h1>
-        <span class="session-badge">{{ session_id }}</span>
+        <span id="sessionBadge" class="session-badge">{{ session_id }}</span>
       </div>
     </div>
 
@@ -23,73 +23,108 @@
         <span class="badge-dot"></span> CONNECTING...
       </div>
       <div id="badgeFsm" class="badge badge-fsm">FSM: IDLE</div>
-      <div id="fpsCounter" class="fps-counter">0.0 FPS</div>
-
-      <div class="btn-group">
-        <button id="btnPause" class="btn" title="Pause / Resume perception pipeline">⏸ Pause</button>
-        <button id="btnRollback" class="btn" title="Undo last committed half-move">↩ Rollback</button>
-        <button id="btnRecalibrate" class="btn" title="Re-detect board corners and perspective">⟳ Recalibrate</button>
-        <button id="btnDownloadPgn" class="btn btn-primary" title="Export FIDE PGN file">⬇ Download PGN</button>
+      <div id="badgeRecStatus" class="badge badge-rec" style="display: none;">
+        <span class="badge-dot"></span> <span id="recTimerLabel">REC 0:00</span>
       </div>
+      <div id="fpsCounter" class="fps-counter">0.0 FPS</div>
     </div>
   </header>
+
+  <!-- Operator Action Toolbar -->
+  <div class="control-toolbar">
+    <div class="toolbar-group">
+      <label for="videoDeviceSelect" class="toolbar-label">Камера:</label>
+      <select id="videoDeviceSelect" class="toolbar-select" title="Выбор видеоустройства"></select>
+      <button id="btnRefreshDevices" class="btn btn-sm" title="Обновить список видеоустройств">🔄</button>
+    </div>
+
+    <div class="toolbar-group">
+      <button id="btnPause" class="btn" title="Запуск / Пауза распознавания">▶ Старт</button>
+      <button id="btnCalibrateNow" class="btn" title="Откалибровать доску на текущем кадре (работает и на паузе)">🎯 Калибровка</button>
+      <button id="btnRecalibrate" class="btn" title="Сбросить углы и передетектировать доску">⟳ Передетект</button>
+      <button id="btnRollback" class="btn" title="Отменить последний ход">↩ Отмена</button>
+      <button id="btnResetSession" class="btn btn-danger" title="Сбросить партию в начальную позицию">↺ Сброс</button>
+    </div>
+
+    <div class="toolbar-group">
+      <button id="btnNewSession" class="btn" title="Завершить текущую и начать новую сессию">＋ Новая сессия</button>
+      <button id="btnSessionsModal" class="btn" title="Открыть или продолжить прошлую сессию">📂 Сессии</button>
+      <button id="btnRecordVideo" class="btn" title="Начать / остановить запись видео партии">⏺ Запись видео</button>
+      <button id="btnTranscribeModal" class="btn" title="Загрузить и расшифровать партию из видео">🎞 Из видео</button>
+      <button id="btnDownloadPgn" class="btn btn-primary" title="Скачать FIDE PGN файл">⬇ PGN</button>
+    </div>
+  </div>
+
+  <!-- Toast / Status Notification Bar -->
+  <div id="statusToast" class="status-toast" style="display: none;"></div>
 
   <!-- Main Container -->
   <main class="main-container">
     <!-- Left Column: Video Stream & Perception Telemetry -->
     <section class="card video-card">
       <div class="card-header">
-        <span>LIVE CAMERA FEED &amp; VISION OVERLAYS</span>
-        <span style="font-size: 0.75rem; color: var(--text-dim);">MJPEG / HTTP</span>
+        <span>ВИДЕОПОТОК И ОВЕРЛЕИ</span>
+        <span id="videoSourceLabel" style="font-size: 0.75rem; color: var(--text-dim);">MJPEG / HTTP</span>
       </div>
       <div class="card-body">
+        <div id="pauseBanner" class="pause-banner" style="display: none;">
+          ⏸ Режим паузы: установите камеру и фигуры, нажмите «🎯 Калибровка» (или потяните углы мышью), затем нажмите «▶ Старт».
+        </div>
+
         <div class="video-wrapper" id="videoWrapper">
           <img id="videoStream" src="/video_feed" class="video-stream" alt="Live Camera Video Stream">
-          <canvas id="cornersCanvas" class="corners-overlay" title="Drag corners to fine-tune board geometry"></canvas>
+          <canvas id="cornersCanvas" class="corners-overlay" title="Потяните углы доски для точной подгонки"></canvas>
         </div>
 
         <div class="video-meta-bar">
           <div class="meta-item">
-            <div class="meta-label">Total Plies</div>
+            <div class="meta-label">Полуходы</div>
             <div id="metaPly" class="meta-value">0 (0)</div>
           </div>
           <div class="meta-item">
-            <div class="meta-label">Board Geometry</div>
+            <div class="meta-label">Геометрия доски</div>
             <div id="metaBoard" class="meta-value" style="color: var(--color-warning);">SEARCHING...</div>
           </div>
           <div class="meta-item">
-            <div class="meta-label">White Player</div>
-            <div class="meta-value" style="font-size: 0.85rem;">{{ white_player }}</div>
+            <div class="meta-label">Белые</div>
+            <div id="metaWhitePlayer" class="meta-value" style="font-size: 0.85rem;">{{ white_player }}</div>
           </div>
           <div class="meta-item">
-            <div class="meta-label">Black Player</div>
-            <div class="meta-value" style="font-size: 0.85rem;">{{ black_player }}</div>
+            <div class="meta-label">Чёрные</div>
+            <div id="metaBlackPlayer" class="meta-value" style="font-size: 0.85rem;">{{ black_player }}</div>
           </div>
         </div>
       </div>
     </section>
 
-    <!-- Right Column: Interactive Chessboard, Engine Eval & PGN History -->
+    <!-- Right Column: Interactive Chessboard, Move Scrubber, Engine Eval & PGN History -->
     <section class="card board-card">
       <div class="card-header">
-        <span>AUTHORITATIVE POSITION &amp; ENGINE EVALUATION</span>
+        <span>ПОЗИЦИЯ И ПРОСМОТР ПАРТИИ</span>
         <span style="font-size: 0.75rem; color: var(--text-dim);">FIDE Engine 16.1</span>
       </div>
       <div class="card-body">
         <!-- Board + Eval Bar Row -->
         <div class="board-eval-row">
-          <!-- Stockfish Vertical Eval Gauge -->
-          <div class="eval-column" title="Stockfish Centipawn Evaluation">
+          <div class="eval-column" title="Оценка Stockfish">
             <div class="eval-meter">
               <div id="evalFill" class="eval-fill-white" style="height: 50%;"></div>
             </div>
             <div id="evalLabel" class="eval-score-label">0.0</div>
           </div>
 
-          <!-- 2D Chessboard Container -->
           <div class="board-container">
             <div id="chessboard" class="chessboard">
               <!-- Dynamically populated 64 squares -->
+            </div>
+
+            <!-- Move-by-Move Replay Navigation -->
+            <div class="replay-bar">
+              <button id="btnReplayStart" class="btn btn-sm" title="В начало (Home)">⏮</button>
+              <button id="btnReplayPrev" class="btn btn-sm" title="Предыдущий ход (←)">◀</button>
+              <span id="replayIndicator" class="replay-indicator">LIVE • Ход 0/0</span>
+              <button id="btnReplayNext" class="btn btn-sm" title="Следующий ход (→)">▶</button>
+              <button id="btnReplayEnd" class="btn btn-sm" title="К текущей позиции (End)">⏭ Live</button>
             </div>
           </div>
         </div>
@@ -97,16 +132,16 @@
         <!-- Recorded Move Notation Card -->
         <div class="card notation-card">
           <div class="card-header" style="background: none; padding: 0.4rem 0.5rem;">
-            <span>RECORDED PGN NOTATION</span>
+            <span>ЗАПИСЬ ПАРТИИ (КЛИК ПО ХОДУ ДЛЯ ПРОСМОТРА)</span>
           </div>
           <div id="notationScroll" class="notation-scroll">
             <table class="notation-table">
               <thead>
                 <tr>
                   <th class="move-num">#</th>
-                  <th class="move-white">White</th>
-                  <th class="move-black">Black</th>
-                  <th class="move-eval">Quality</th>
+                  <th class="move-white">Белые</th>
+                  <th class="move-black">Чёрные</th>
+                  <th class="move-eval">Оценка</th>
                 </tr>
               </thead>
               <tbody id="movesTableBody">
@@ -119,27 +154,79 @@
     </section>
   </main>
 
-  <!-- UNCERTAIN State Modal Dialog -->
-  <div id="uncertainModal" class="modal-overlay">
+  <!-- UNCERTAIN State Non-Blocking Collapsible Arbiter Panel -->
+  <div id="uncertainModal" class="modal-overlay uncertain-panel">
     <div class="modal-content">
-      <h2 class="modal-title">⚠️ Uncertain Move Detected</h2>
-      <div class="modal-body">
-        The vision system has identified multiple candidate moves with comparable confidence.
-        Please arbitrate by selecting the verified move or providing manual UCI notation:
+      <div class="modal-header-row" style="margin-bottom: 0.4rem;">
+        <h2 id="uncertainModalTitle" class="modal-title">⚠️ Неопределённый ход</h2>
+        <div class="btn-group">
+          <button id="btnToggleUncertain" class="btn btn-sm" title="Свернуть / развернуть окно">▾ Свернуть</button>
+        </div>
       </div>
+      <div id="uncertainCollapsibleBody">
+        <div id="uncertainModalBody" class="modal-body">
+          Система не смогла однозначно распознать ход. Выберите вариант или введите UCI вручную:
+        </div>
 
-      <div id="candidateList" class="candidate-list">
-        <!-- Candidate buttons generated here -->
-      </div>
+        <div id="candidateList" class="candidate-list"></div>
 
-      <div class="manual-input-row">
-        <input type="text" id="manualUciInput" class="manual-input" placeholder="e.g. e2e4, g1f3..." maxlength="5">
-        <button id="btnManualCommit" class="btn btn-primary">Commit UCI</button>
-        <button id="btnAutoAcceptTop" class="btn btn-warning">Accept #1</button>
+        <div class="manual-input-row">
+          <input type="text" id="manualUciInput" class="manual-input" placeholder="напр. e2e4, g1f3..." maxlength="5">
+          <button id="btnManualCommit" class="btn btn-primary">Подтвердить UCI</button>
+          <button id="btnAutoAcceptTop" class="btn btn-warning">Выбрать #1</button>
+        </div>
       </div>
     </div>
   </div>
 
-  <script src="/static/js/app.js"></script>
+  <!-- Sessions Picker Modal -->
+  <div id="sessionsModal" class="modal-overlay">
+    <div class="modal-content modal-wide">
+      <div class="modal-header-row">
+        <h2 class="modal-title" style="color: var(--color-primary);">📂 Управление сессиями</h2>
+        <button id="btnCloseSessionsModal" class="btn btn-sm">✕</button>
+      </div>
+      <div class="new-session-form">
+        <input type="text" id="newWhiteInput" class="manual-input" placeholder="Белые (White Player)">
+        <input type="text" id="newBlackInput" class="manual-input" placeholder="Чёрные (Black Player)">
+        <button id="btnCreateNamedSession" class="btn btn-primary">＋ Создать</button>
+      </div>
+      <div id="sessionsList" class="sessions-list"></div>
+    </div>
+  </div>
+
+  <!-- Video Upload & Transcription Modal -->
+  <div id="transcribeModal" class="modal-overlay">
+    <div class="modal-content modal-wide">
+      <div class="modal-header-row">
+        <h2 class="modal-title" style="color: var(--color-purple);">🎞 Регистрация партии по видео</h2>
+        <button id="btnCloseTranscribeModal" class="btn btn-sm">✕</button>
+      </div>
+      <p class="modal-body" style="margin: 0.5rem 0;">
+        Загрузите видеофайл партии с диска или выберите уже сохранённое видео. По завершении расшифровки ходы откроются на правой доске для пошагового просмотра.
+      </p>
+      <div class="upload-box">
+        <input type="file" id="videoFileInput" accept="video/*,.mp4,.avi,.mov,.mkv,.webm">
+        <div class="new-session-form" style="margin-top: 0.5rem;">
+          <input type="text" id="transcribeWhiteInput" class="manual-input" placeholder="Белые (White Player)" value="White Player">
+          <input type="text" id="transcribeBlackInput" class="manual-input" placeholder="Чёрные (Black Player)" value="Black Player">
+          <button id="btnUploadAndTranscribe" class="btn btn-primary">⬆ Загрузить и расшифровать</button>
+        </div>
+      </div>
+
+      <div id="transcribeProgressBox" class="progress-box" style="display: none;">
+        <div id="transcribeStatusText" class="progress-label">Подготовка...</div>
+        <div class="progress-track">
+          <div id="transcribeProgressFill" class="progress-fill" style="width: 0%;"></div>
+        </div>
+        <div id="transcribeMovesPreview" class="progress-moves"></div>
+      </div>
+
+      <div class="section-subtitle">Сохранённые / доступные видео:</div>
+      <div id="videosList" class="sessions-list"></div>
+    </div>
+  </div>
+
+  <script src="/static/js/app.js?v=5"></script>
 </body>
 </html>

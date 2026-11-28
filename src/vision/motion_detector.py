@@ -125,6 +125,11 @@ class MotionDetector:
             + (1.0 - self.ema_alpha) * self.smoothed_motion_score
         )
 
+        # Ensure ROI grid matches incoming warped board image dimensions
+        img_board_dim = int(min(gray.shape[0], gray.shape[1]))
+        if img_board_dim > 0 and img_board_dim != self.extractor.board_size:
+            self.extractor = CellRoiExtractor(board_size=img_board_dim)
+
         # Calculate per-square motion scores across all 64 squares
         square_scores: Dict[str, float] = {}
         for sq in CHESS_SQUARES:

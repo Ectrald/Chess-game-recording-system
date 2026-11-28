@@ -42,9 +42,13 @@ vision:
 temporal:
   settling_time_sec: 0.8          # Delta t_settle: Debounce settling window in seconds
   motion_diff_threshold: 0.04     # tau_motion: Pixel change ratio to enter MOVING
-  verifying_stable_frames: 8      # N_verify: Consecutive stable frames to confirm state
+  verifying_stable_frames: 5      # N_verify: Consecutive stable frames to confirm state
   pixel_diff_threshold: 25        # tau_diff: Sensitivity threshold for pixel delta (0..255)
   motion_ema_alpha: 0.35          # Temporal smoothing alpha for motion score
+  recovery_grace_sec: 2.0         # Grace window for knocked-over pieces / takeback recovery
+  auto_takeback_enabled: true     # Auto-rollback if physical takeback matches pre-commit board
+  drift_check_interval_frames: 10 # Interval between lightweight STABLE drift checks
+  hand_idle_skip_stride: 3        # Hand detector stride when board is completely idle
 
 
 decision:

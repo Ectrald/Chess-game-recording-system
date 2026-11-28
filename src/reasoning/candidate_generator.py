@@ -168,3 +168,51 @@ class LegalMoveCandidateGenerator:
 
         return candidates
 
+    def find_two_ply_sequence(
+        self,
+        board: chess.Board,
+        changed_squares: Set[str],
+        square_deltas: Optional[Dict[str, float]] = None,
+    ) -> List[Tuple[chess.Move, chess.Move]]:
+        """Bounded 2-ply move path search when two rapid moves occur inside one debounce window.
+
+        Triggered for 3..8 changed squares when no single legal move explains them cleanly.
+        """
+        if not (3 <= len(changed_squares) <= 8):
+            return []
+
+        deltas = square_deltas or {}
+        scored_pairs: List[Tuple[float, chess.Move, chess.Move]] = []
+        for m1 in board.legal_moves:
+            f1 = chess.square_name(m1.from_square)
+            t1 = chess.square_name(m1.to_square)
+            if f1 not in changed_squares and t1 not in changed_squares:
+                continue
+            aff1 = set(self.get_affected_squares(board, m1))
+            if not aff1.issubset(changed_squares):
+                continue
+
+            b2 = board.copy()
+            b2.push(m1)
+            for m2 in b2.legal_moves:
+                f2 = chess.square_name(m2.from_square)
+                t2 = chess.square_name(m2.to_square)
+                if f2 not in changed_squares and t2 not in changed_squares:
+                    continue
+                aff2 = set(self.get_affected_squares(b2, m2))
+                # Captures on the same target square (aff1 & aff2) overlap on 1 square -> union has 3..4 squares
+                sym_diff = aff1.symmetric_difference(aff2)
+                union = aff1.union(aff2)
+                if union == changed_squares or sym_diff == changed_squares:
+                    exact_bonus = 10.0 if union == changed_squares else 5.0
+                    delta_sum = sum(deltas.get(sq, 0.0) for sq in union)
+                    scored_pairs.append((exact_bonus + delta_sum, m1, m2))
+                elif union.issubset(changed_squares) and len(changed_squares - union) <= 4:
+                    residual = sum(deltas.get(sq, 0.0) for sq in (changed_squares - union))
+                    delta_sum = sum(deltas.get(sq, 0.0) for sq in union)
+                    if delta_sum > residual * 1.5:
+                        scored_pairs.append((delta_sum - 0.5 * residual, m1, m2))
+
+        scored_pairs.sort(key=lambda it: it[0], reverse=True)
+        return [(m1, m2) for _, m1, m2 in scored_pairs]
+
