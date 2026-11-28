@@ -56,17 +56,24 @@ def export_model_to_onnx(
     model.eval()
     dummy_input = torch.randn(*input_shape, dtype=torch.float32)
 
+    export_kwargs = {
+        "export_params": True,
+        "opset_version": opset_version,
+        "do_constant_folding": True,
+        "input_names": ["cell_crops"],
+        "output_names": ["probabilities"],
+        "dynamic_axes": {"cell_crops": {0: "batch_size"}, "probabilities": {0: "batch_size"}},
+    }
+    # PyTorch 2.5+ defaults to dynamo exporter requiring onnxscript; disable dynamo for direct tracing
+    if hasattr(torch.onnx, "export") and "dynamo" in torch.onnx.export.__code__.co_varnames:
+        export_kwargs["dynamo"] = False
+
     try:
         torch.onnx.export(
             model,
             dummy_input,
             str(out_p),
-            export_params=True,
-            opset_version=opset_version,
-            do_constant_folding=True,
-            input_names=["cell_crops"],
-            output_names=["probabilities"],
-            dynamic_axes={"cell_crops": {0: "batch_size"}, "probabilities": {0: "batch_size"}},
+            **export_kwargs,
         )
         logger.info("Successfully exported ONNX model to %s (opset %d)", out_p, opset_version)
         return True

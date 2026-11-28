@@ -13,12 +13,13 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 # Install system dependencies:
 # - stockfish: UCI chess engine for move analysis
-# - libgl1, libglib2.0-0, libgomp1: OpenCV GUI / image processing dependencies
+# - libgl1, libegl1, libglib2.0-0, libgomp1: OpenCV GUI / MediaPipe / image processing dependencies
 # - ffmpeg: video codec support
 RUN apt-get update && apt-get install -y --no-install-recommends \
     stockfish \
     ffmpeg \
     libgl1 \
+    libegl1 \
     libglib2.0-0 \
     libgomp1 \
     libsm6 \
@@ -37,11 +38,12 @@ RUN pip install --no-cache-dir --upgrade pip && \
 COPY configs/ /app/configs/
 COPY data/ /app/data/
 COPY src/ /app/src/
+COPY scripts/ /app/scripts/
 COPY tests/ /app/tests/
 COPY main.py pytest.ini /app/
 
-# Ensure output sessions directory exists
-RUN mkdir -p /app/data/sessions
+# Ensure output and weights directories exist
+RUN mkdir -p /app/data/sessions /app/models /app/data/weights
 
 # Default CLI entrypoint
 ENTRYPOINT ["python", "main.py"]

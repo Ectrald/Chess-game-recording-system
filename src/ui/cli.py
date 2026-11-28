@@ -39,9 +39,33 @@ def setup_logging(verbose: bool = False) -> None:
     )
 
 
+def ensure_model_weights(config: AppConfig) -> None:
+    """Checks and automatically prepares pretrained weights if missing."""
+    try:
+        # 1. Piece classifier
+        if config.piece_classifier and config.piece_classifier.enabled:
+            model_p = Path(config.piece_classifier.model_path)
+            if not model_p.is_file() or model_p.stat().st_size <= 1024:
+                logger.info("Piece classifier weights missing at %s, auto-preparing...", model_p)
+                from scripts.download_model import ensure_piece_classifier_onnx
+                ensure_piece_classifier_onnx(model_p)
+
+        # 2. YOLO board weights
+        if config.vision and config.vision.localizer and config.vision.localizer.mode == "coarse_to_fine":
+            yolo_p = Path(config.vision.localizer.yolo_model_path)
+            if not yolo_p.is_file() or yolo_p.stat().st_size <= 1024:
+                logger.info("YOLO board weights missing at %s, auto-preparing...", yolo_p)
+                from scripts.download_model import download_file, MODEL_REGISTRY
+                if "yolo_board" in MODEL_REGISTRY:
+                    download_file(MODEL_REGISTRY["yolo_board"]["url"], yolo_p)
+    except Exception as exc:
+        logger.warning("Auto-preparation of model weights encountered non-fatal error: %s", exc)
+
+
 def cmd_record(args: argparse.Namespace) -> int:
     """Executes the `record` subcommand."""
     config: AppConfig = load_config(args.config)
+    ensure_model_weights(config)
 
     # Determine camera source type
     src = str(args.source)
@@ -192,6 +216,7 @@ def cmd_web(args: argparse.Namespace) -> int:
     from src.ui.web.app import create_web_app
 
     config: AppConfig = load_config(args.config)
+    ensure_model_weights(config)
 
     # Determine camera source type
     src = str(args.source)

@@ -12,6 +12,11 @@ services:
     ports:
       - "8000:8000"
     volumes:
+      - ./src:/app/src
+      - ./scripts:/app/scripts:ro
+      - ./tests:/app/tests:ro
+      - ./models:/app/models
+      - ./data/weights:/app/data/weights
       - ./data/sessions:/app/data/sessions
       - ./data/benchmark_videos:/app/data/benchmark_videos:ro
       - ./configs:/app/configs:ro
@@ -29,6 +34,11 @@ services:
     image: chess-recorder:latest
     container_name: chess-recorder-headless
     volumes:
+      - ./src:/app/src
+      - ./scripts:/app/scripts:ro
+      - ./tests:/app/tests:ro
+      - ./models:/app/models
+      - ./data/weights:/app/data/weights
       - ./data/sessions:/app/data/sessions
       - ./data/benchmark_videos:/app/data/benchmark_videos:ro
       - ./configs:/app/configs:ro

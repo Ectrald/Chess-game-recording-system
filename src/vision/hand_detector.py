@@ -189,19 +189,49 @@ class MediaPipeHandDetector(BaseHandDetector):
         self.config = config or HandDetectorConfig()
         self._mp = None
         self._hands = None
+        self._landmarker = None
+        self._is_tasks_api = False
         self._available = False
 
         try:
             import mediapipe as mp
             self._mp = mp
-            self._hands = mp.solutions.hands.Hands(
-                static_image_mode=False,
-                max_num_hands=2,
-                min_detection_confidence=self.config.min_detection_confidence,
-                min_tracking_confidence=self.config.min_tracking_confidence,
-            )
-            self._available = True
-            logger.info("MediaPipe HandLandmarker initialized successfully.")
+            task_model_path = Path("data/weights/hand_landmarker.task")
+            if hasattr(mp, "tasks") and hasattr(mp.tasks, "vision") and task_model_path.is_file():
+                try:
+                    BaseOptions = mp.tasks.BaseOptions
+                    HandLandmarker = mp.tasks.vision.HandLandmarker
+                    HandLandmarkerOptions = mp.tasks.vision.HandLandmarkerOptions
+                    VisionRunningMode = mp.tasks.vision.RunningMode
+
+                    options = HandLandmarkerOptions(
+                        base_options=BaseOptions(model_asset_path=str(task_model_path)),
+                        running_mode=VisionRunningMode.IMAGE,
+                        num_hands=2,
+                        min_hand_detection_confidence=self.config.min_detection_confidence,
+                        min_hand_presence_confidence=self.config.min_tracking_confidence,
+                        min_tracking_confidence=self.config.min_tracking_confidence,
+                    )
+                    self._landmarker = HandLandmarker.create_from_options(options)
+                    self._is_tasks_api = True
+                    self._available = True
+                    logger.info("MediaPipe HandLandmarker (Tasks API) initialized successfully from %s", task_model_path)
+                except Exception as t_err:
+                    logger.debug("Tasks API initialization skipped (%s), trying Solutions API...", t_err)
+
+            if not self._available and hasattr(mp, "solutions") and hasattr(mp.solutions, "hands"):
+                self._hands = mp.solutions.hands.Hands(
+                    static_image_mode=False,
+                    max_num_hands=2,
+                    min_detection_confidence=self.config.min_detection_confidence,
+                    min_tracking_confidence=self.config.min_tracking_confidence,
+                )
+                self._is_tasks_api = False
+                self._available = True
+                logger.info("MediaPipe HandLandmarker (Solutions API) initialized successfully.")
+
+            if not self._available:
+                raise RuntimeError("No compatible MediaPipe HandLandmarker backend found.")
         except Exception as exc:
             logger.warning(
                 "MediaPipe could not be initialized (%s). Operating in fallback mode.",
@@ -219,7 +249,7 @@ class MediaPipeHandDetector(BaseHandDetector):
         geometry: Optional[BoardGeometry] = None,
         rois: Optional[Dict[str, CellROI]] = None,
     ) -> HandDetection:
-        if not self._available or self._hands is None:
+        if not self._available or (self._hands is None and self._landmarker is None):
             return HandDetection(
                 is_hand_present=False,
                 confidence=0.0,
@@ -237,29 +267,46 @@ class MediaPipeHandDetector(BaseHandDetector):
         else:
             rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
 
-        results = self._hands.process(rgb)
-
-        if not results.multi_hand_landmarks:
-            return HandDetection(
-                is_hand_present=False,
-                confidence=0.0,
-                landmarks=[],
-                bounding_box=None,
-                occluded_squares=[],
-                occlusion_ratios={sq: 0.0 for sq in CHESS_SQUARES},
-                polygon_board=None,
-            )
-
-        # Collect all landmarks across detected hands
         all_landmarks: List[Tuple[float, float, float]] = []
         all_pts_image: List[Tuple[float, float]] = []
 
-        for hand_lms in results.multi_hand_landmarks:
-            for lm in hand_lms.landmark:
-                all_landmarks.append((float(lm.x), float(lm.y), float(lm.z)))
-                px = float(lm.x * w)
-                py = float(lm.y * h)
-                all_pts_image.append((px, py))
+        if self._is_tasks_api and self._landmarker is not None:
+            mp_image = self._mp.Image(image_format=self._mp.ImageFormat.SRGB, data=rgb)
+            detection_result = self._landmarker.detect(mp_image)
+            if not detection_result.hand_landmarks:
+                return HandDetection(
+                    is_hand_present=False,
+                    confidence=0.0,
+                    landmarks=[],
+                    bounding_box=None,
+                    occluded_squares=[],
+                    occlusion_ratios={sq: 0.0 for sq in CHESS_SQUARES},
+                    polygon_board=None,
+                )
+            for hand_lms in detection_result.hand_landmarks:
+                for lm in hand_lms:
+                    all_landmarks.append((float(lm.x), float(lm.y), float(lm.z)))
+                    px = float(lm.x * w)
+                    py = float(lm.y * h)
+                    all_pts_image.append((px, py))
+        else:
+            results = self._hands.process(rgb)
+            if not results.multi_hand_landmarks:
+                return HandDetection(
+                    is_hand_present=False,
+                    confidence=0.0,
+                    landmarks=[],
+                    bounding_box=None,
+                    occluded_squares=[],
+                    occlusion_ratios={sq: 0.0 for sq in CHESS_SQUARES},
+                    polygon_board=None,
+                )
+            for hand_lms in results.multi_hand_landmarks:
+                for lm in hand_lms.landmark:
+                    all_landmarks.append((float(lm.x), float(lm.y), float(lm.z)))
+                    px = float(lm.x * w)
+                    py = float(lm.y * h)
+                    all_pts_image.append((px, py))
 
         # Calculate bounding box in original image
         xs = [p[0] for p in all_pts_image]
