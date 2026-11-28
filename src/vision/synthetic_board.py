@@ -146,7 +146,9 @@ class SyntheticBoardGenerator:
         """Returns the exact ground-truth quadrilateral geometry and homography."""
         return BoardGeometry(
             corners=self.corners,
-            homography_matrix=self._homography_forward.tolist(),
+            homography_matrix=self._homography_inverse.tolist(),
+            inverse_homography=self._homography_forward.tolist(),
+            detection_method="synthetic",
             confidence=1.0,
             is_valid=True,
             orientation_calibrated=True,
@@ -363,7 +365,8 @@ class SyntheticBoardGenerator:
             self._homography_forward,
             (self.canvas_width, self.canvas_height),
             flags=cv2.INTER_LINEAR,
-            borderMode=cv2.BORDER_TRANSPARENT,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(0, 0, 0),
         )
 
         # Create quadrilateral mask

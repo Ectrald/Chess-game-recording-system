@@ -215,7 +215,14 @@ class JSONLEventRepository:
                     if ev_type == "move":
                         expected_ply += 1
                     elif ev_type == "rollback":
-                        expected_ply = max(1, expected_ply - 1)
+                        if expected_ply <= 1:
+                            return False, f"Line {line_idx}: rollback cannot precede ply 1"
+                        if ev.ply != expected_ply - 1:
+                            return (
+                                False,
+                                f"Line {line_idx}: invalid rollback ply. Expected {expected_ply - 1}, got {ev.ply}",
+                            )
+                        expected_ply -= 1
 
             return True, None
 

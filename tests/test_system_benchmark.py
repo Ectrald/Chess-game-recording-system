@@ -163,7 +163,7 @@ class TestSystemBenchmark:
             canvas_width=1280,
             canvas_height=720,
             fps=30.0,
-            frames_per_move=16,
+            frames_per_move=20,
         )
         generator.set_game_from_pgn(str(pgn_path))
 
@@ -246,7 +246,7 @@ class TestSystemBenchmark:
             canvas_width=1280,
             canvas_height=720,
             fps=30.0,
-            frames_per_move=16,
+            frames_per_move=20,
         )
         generator.set_game_from_moves(moves)
 

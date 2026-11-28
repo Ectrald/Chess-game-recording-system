@@ -1,46 +1,51 @@
 \babel@toc {russian}{}\relax 
 \contentsline {section}{Перечень условных обозначений}{3}{section*.2}%
-\contentsline {section}{Введение}{4}{section*.3}%
-\contentsline {section}{\numberline {1}Анализ предметной области и формирование требований к гибридной интеллектуальной системе}{6}{section.0.1}%
-\contentsline {subsection}{\numberline {1.1}Характеристика предметной области}{6}{subsection.0.1.1}%
-\contentsline {subsection}{\numberline {1.2}Анализ решаемого класса задач}{7}{subsection.0.1.2}%
-\contentsline {subsection}{\numberline {1.3}Анализ базы знаний, решателя задач и интерфейса}{8}{subsection.0.1.3}%
-\contentsline {subsection}{\numberline {1.4}Анализ существующих гибридных интеллектуальных систем}{9}{subsection.0.1.4}%
-\contentsline {subsection}{\numberline {1.5}Требования к гибридной интеллектуальной системе}{10}{subsection.0.1.5}%
-\contentsline {subsection}{\numberline {1.6}Выводы}{12}{subsection.0.1.6}%
-\contentsline {section}{\numberline {2}Проектирование гибридной интеллектуальной системы}{13}{section.0.2}%
-\contentsline {subsection}{\numberline {2.1}Определение пользователей гибридной интеллектуальной системы}{13}{subsection.0.2.1}%
-\contentsline {subsection}{\numberline {2.2}Сценарии использования гибридной интеллектуальной системы}{15}{subsection.0.2.2}%
-\contentsline {subsubsection}{\numberline {2.2.1}Сценарий автоматической видеорегистрации шахматной партии}{15}{subsubsection.0.2.2.1}%
-\contentsline {subsubsection}{\numberline {2.2.2}Сценарий разрешения спорных ситуаций (расширение регистрации)}{16}{subsubsection.0.2.2.2}%
-\contentsline {subsubsection}{\numberline {2.2.3}Сценарий компьютерного анализа и аудита сыгранной партии}{16}{subsubsection.0.2.2.3}%
-\contentsline {subsubsection}{\numberline {2.2.4}Сценарий экспорта нотации партии}{17}{subsubsection.0.2.2.4}%
-\contentsline {subsection}{\numberline {2.3}Общая архитектура гибридной интеллектуальной системы}{20}{subsection.0.2.3}%
-\contentsline {subsection}{\numberline {2.4}Проектирование алгоритмов и методов решения задач}{24}{subsection.0.2.4}%
-\contentsline {subsubsection}{\numberline {2.4.1}Алгоритм локализации и нормализации доски}{24}{subsubsection.0.2.4.1}%
-\contentsline {subsubsection}{\numberline {2.4.2}Алгоритм распознавания состояния клетки}{25}{subsubsection.0.2.4.2}%
-\contentsline {subsubsection}{\numberline {2.4.3}Обнаружение перекрытия руки}{26}{subsubsection.0.2.4.3}%
-\contentsline {subsubsection}{\numberline {2.4.4}Временная стабилизация наблюдений}{26}{subsubsection.0.2.4.4}%
-\contentsline {subsubsection}{\numberline {2.4.5}Формирование кандидатов хода}{27}{subsubsection.0.2.4.5}%
-\contentsline {subsubsection}{\numberline {2.4.6}Проверка шахматных ограничений}{28}{subsubsection.0.2.4.6}%
-\contentsline {subsubsection}{\numberline {2.4.7}Механизм восстановления после ошибок}{30}{subsubsection.0.2.4.7}%
-\contentsline {subsubsection}{\numberline {2.4.8}Постобработка подтверждённого хода}{30}{subsubsection.0.2.4.8}%
-\contentsline {subsubsection}{\numberline {2.4.9}Порядок обработки одного цикла}{31}{subsubsection.0.2.4.9}%
-\contentsline {subsubsection}{\numberline {2.4.10}Стратегия вычислительной нагрузки}{32}{subsubsection.0.2.4.10}%
+\contentsline {section}{Введение}{5}{section*.3}%
+\contentsline {section}{\numberline {1}Анализ предметной области и формирование требований к гибридной интеллектуальной системе}{7}{section.0.1}%
+\contentsline {subsection}{\numberline {1.1}Характеристика предметной области}{7}{subsection.0.1.1}%
+\contentsline {subsection}{\numberline {1.2}Анализ решаемого класса задач}{8}{subsection.0.1.2}%
+\contentsline {subsection}{\numberline {1.3}Анализ базы знаний, решателя задач и интерфейса}{9}{subsection.0.1.3}%
+\contentsline {subsection}{\numberline {1.4}Анализ существующих гибридных интеллектуальных систем}{10}{subsection.0.1.4}%
+\contentsline {subsection}{\numberline {1.5}Требования к гибридной интеллектуальной системе}{11}{subsection.0.1.5}%
+\contentsline {subsection}{\numberline {1.6}Выводы}{13}{subsection.0.1.6}%
+\contentsline {section}{\numberline {2}Проектирование гибридной интеллектуальной системы}{14}{section.0.2}%
+\contentsline {subsection}{\numberline {2.1}Определение пользователей гибридной интеллектуальной системы}{14}{subsection.0.2.1}%
+\contentsline {subsection}{\numberline {2.2}Сценарии использования гибридной интеллектуальной системы}{16}{subsection.0.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.1}Сценарий автоматической видеорегистрации шахматной партии}{16}{subsubsection.0.2.2.1}%
+\contentsline {subsubsection}{\numberline {2.2.2}Сценарий разрешения спорных ситуаций (расширение регистрации)}{17}{subsubsection.0.2.2.2}%
+\contentsline {subsubsection}{\numberline {2.2.3}Сценарий компьютерного анализа и аудита сыгранной партии}{17}{subsubsection.0.2.2.3}%
+\contentsline {subsubsection}{\numberline {2.2.4}Сценарий экспорта нотации партии}{18}{subsubsection.0.2.2.4}%
+\contentsline {subsection}{\numberline {2.3}Общая архитектура гибридной интеллектуальной системы}{21}{subsection.0.2.3}%
+\contentsline {subsection}{\numberline {2.4}Проектирование алгоритмов и методов решения задач}{25}{subsection.0.2.4}%
+\contentsline {subsubsection}{\numberline {2.4.1}Алгоритм локализации и нормализации доски}{25}{subsubsection.0.2.4.1}%
+\contentsline {subsubsection}{\numberline {2.4.2}Алгоритм распознавания состояния клетки}{26}{subsubsection.0.2.4.2}%
+\contentsline {subsubsection}{\numberline {2.4.3}Обнаружение перекрытия руки}{27}{subsubsection.0.2.4.3}%
+\contentsline {subsubsection}{\numberline {2.4.4}Временная стабилизация наблюдений}{27}{subsubsection.0.2.4.4}%
+\contentsline {subsubsection}{\numberline {2.4.5}Формирование кандидатов хода}{28}{subsubsection.0.2.4.5}%
+\contentsline {subsubsection}{\numberline {2.4.6}Проверка шахматных ограничений}{29}{subsubsection.0.2.4.6}%
+\contentsline {subsubsection}{\numberline {2.4.7}Механизм восстановления после ошибок}{31}{subsubsection.0.2.4.7}%
+\contentsline {subsubsection}{\numberline {2.4.8}Постобработка подтверждённого хода}{32}{subsubsection.0.2.4.8}%
+\contentsline {subsubsection}{\numberline {2.4.9}Порядок обработки одного цикла}{32}{subsubsection.0.2.4.9}%
+\contentsline {subsubsection}{\numberline {2.4.10}Стратегия вычислительной нагрузки}{33}{subsubsection.0.2.4.10}%
 \contentsline {subsubsection}{\numberline {2.4.11}Форматы обмена данными между компонентами}{35}{subsubsection.0.2.4.11}%
-\contentsline {subsubsection}{\numberline {2.4.12}Обработка типовых отказов}{35}{subsubsection.0.2.4.12}%
-\contentsline {subsubsection}{\numberline {2.4.13}Оценка вычислительной сложности}{35}{subsubsection.0.2.4.13}%
-\contentsline {subsubsection}{\numberline {2.4.14}Интеграция аналитического слоя}{37}{subsubsection.0.2.4.14}%
-\contentsline {subsubsection}{\numberline {2.4.15}Диаграмма состояний системы}{37}{subsubsection.0.2.4.15}%
-\contentsline {subsection}{\numberline {2.5}Выводы}{37}{subsection.0.2.5}%
-\contentsline {section}{\numberline {3}Реализация, тестирование и демонстрация гибридной интеллектуальной системы}{39}{section.0.3}%
-\contentsline {subsection}{\numberline {3.1}Выбор средств и технологий реализации}{39}{subsection.0.3.1}%
-\contentsline {subsection}{\numberline {3.2}Структура программной реализации}{39}{subsection.0.3.2}%
-\contentsline {subsection}{\numberline {3.3}Реализация пользовательского интерфейса}{39}{subsection.0.3.3}%
-\contentsline {subsection}{\numberline {3.4}Тестирование интеллектуальной системы}{39}{subsection.0.3.4}%
-\contentsline {subsection}{\numberline {3.5}Оценка качества, эффективности и объяснимости системы}{39}{subsection.0.3.5}%
-\contentsline {subsection}{\numberline {3.6}Демонстрация работы гибридной интеллектуальной системы}{39}{subsection.0.3.6}%
-\contentsline {subsection}{\numberline {3.7}Анализ ограничений и направления развития}{39}{subsection.0.3.7}%
-\contentsline {subsection}{\numberline {3.8}Выводы}{39}{subsection.0.3.8}%
-\contentsline {section}{Заключение}{40}{section*.18}%
-\contentsline {section}{Cписок использованных источников}{41}{section*.20}%
+\contentsline {subsubsection}{\numberline {2.4.12}Обработка типовых отказов}{36}{subsubsection.0.2.4.12}%
+\contentsline {subsubsection}{\numberline {2.4.13}Оценка вычислительной сложности}{36}{subsubsection.0.2.4.13}%
+\contentsline {subsubsection}{\numberline {2.4.14}Интеграция аналитического слоя}{38}{subsubsection.0.2.4.14}%
+\contentsline {subsubsection}{\numberline {2.4.15}Диаграмма состояний системы}{38}{subsubsection.0.2.4.15}%
+\contentsline {subsection}{\numberline {2.5}Выводы}{38}{subsection.0.2.5}%
+\contentsline {section}{\numberline {3}Реализация, тестирование и демонстрация гибридной интеллектуальной системы}{40}{section.0.3}%
+\contentsline {subsection}{\numberline {3.1}Выбор средств и технологий реализации}{40}{subsection.0.3.1}%
+\contentsline {subsection}{\numberline {3.2}Структура программной реализации}{41}{subsection.0.3.2}%
+\contentsline {subsection}{\numberline {3.3}Реализация пользовательского интерфейса}{45}{subsection.0.3.3}%
+\contentsline {subsection}{\numberline {3.4}Тестирование интеллектуальной системы}{46}{subsection.0.3.4}%
+\contentsline {subsection}{\numberline {3.5}Оценка качества, эффективности и объяснимости системы}{48}{subsection.0.3.5}%
+\contentsline {subsection}{\numberline {3.6}Демонстрация работы гибридной интеллектуальной системы}{50}{subsection.0.3.6}%
+\contentsline {subsubsection}{\numberline {3.6.1}Сценарий 1: Автоматическая регистрация короткой партии (Детский мат)}{51}{subsubsection.0.3.6.1}%
+\contentsline {subsubsection}{\numberline {3.6.2}Сценарий 2: Комплекс специальных ходов ФИДЕ}{51}{subsubsection.0.3.6.2}%
+\contentsline {subsubsection}{\numberline {3.6.3}Сценарий 3: Физическое перекрытие доски рукой без хода}{51}{subsubsection.0.3.6.3}%
+\contentsline {subsubsection}{\numberline {3.6.4}Сценарий 4: Разрешение неоднозначности оператором (UNCERTAIN)}{51}{subsubsection.0.3.6.4}%
+\contentsline {subsubsection}{\numberline {3.6.5}Сценарий 5: Обнаружение и регистрация нелегальной перестановки фигур}{52}{subsubsection.0.3.6.5}%
+\contentsline {subsection}{\numberline {3.7}Анализ ограничений и направления развития}{52}{subsection.0.3.7}%
+\contentsline {subsection}{\numberline {3.8}Выводы по разделу 3}{52}{subsection.0.3.8}%
+\contentsline {section}{Заключение}{54}{section*.25}%
+\contentsline {section}{Cписок использованных источников}{57}{section*.27}%

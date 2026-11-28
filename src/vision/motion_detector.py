@@ -13,7 +13,7 @@ import cv2
 import numpy as np
 
 from src.core.config import TemporalConfig
-from src.core.datatypes import BoardOrientation, CHESS_SQUARES, MotionMetrics
+from src.core.datatypes import BoardOrientation, CellROI, CHESS_SQUARES, MotionMetrics
 from src.vision.roi_extractor import CellRoiExtractor
 
 
@@ -71,17 +71,23 @@ class MotionDetector:
         Returns:
             MotionMetrics with global and per-square motion intensities.
         """
-        if board_image.ndim == 3:
+        if board_image.ndim == 3 and board_image.shape[2] == 3:
             gray = cv2.cvtColor(board_image, cv2.COLOR_BGR2GRAY)
+        elif board_image.ndim == 3 and board_image.shape[2] == 4:
+            gray = cv2.cvtColor(board_image, cv2.COLOR_BGRA2GRAY)
+        elif board_image.ndim == 3 and board_image.shape[2] == 1:
+            gray = board_image[:, :, 0].copy()
         else:
             gray = board_image.copy()
+        if gray.dtype != np.uint8:
+            gray = np.clip(gray, 0, 255).astype(np.uint8)
 
         # Gaussian blur to filter sensor noise
         blurred = cv2.GaussianBlur(gray, (self.blur_ksize, self.blur_ksize), 1.0)
         curr_mean = float(np.mean(blurred))
 
-        # First frame: initialize history
-        if self.prev_gray is None:
+        # First frame or shape change: initialize history
+        if self.prev_gray is None or self.prev_gray.shape != blurred.shape:
             self.prev_gray = blurred
             self.prev_mean_lum = curr_mean
             self.smoothed_motion_score = 0.0

@@ -20,6 +20,7 @@ import numpy as np
 from src.core.config import HandDetectorConfig
 from src.core.datatypes import (
     BoardGeometry,
+    BoardOrientation,
     CellROI,
     CHESS_SQUARES,
     Frame,
@@ -35,6 +36,7 @@ def compute_occlusion_from_board_mask(
     rois: Optional[Dict[str, CellROI]] = None,
     occlusion_threshold: float = 0.15,
     board_size: int = 640,
+    orientation: BoardOrientation = BoardOrientation.WHITE_BOTTOM,
 ) -> Tuple[List[str], Dict[str, float]]:
     """Computes occlusion ratio and occluded status for all 64 chess squares on 640x640 board.
 
@@ -68,15 +70,11 @@ def compute_occlusion_from_board_mask(
             if ratio >= occlusion_threshold:
                 occluded_squares.append(sq)
     else:
-        # Fallback to standard 8x8 uniform grid
-        cell_size = board_size / 8.0
+        from src.vision.roi_extractor import CellRoiExtractor
+        # Fallback to standard 8x8 orientation-aware grid
+        ext = CellRoiExtractor(board_size=board_size)
         for sq in CHESS_SQUARES:
-            col = ord(sq[0]) - ord("a")
-            row = 8 - int(sq[1])
-            xmin = int(round(col * cell_size))
-            xmax = int(round((col + 1) * cell_size))
-            ymin = int(round(row * cell_size))
-            ymax = int(round((row + 1) * cell_size))
+            xmin, ymin, xmax, ymax = ext.get_square_coordinates(sq, orientation)
 
             c_ymin = max(0, min(h, ymin))
             c_ymax = max(0, min(h, ymax))
@@ -204,6 +202,10 @@ class MediaPipeHandDetector(BaseHandDetector):
             import mediapipe as mp
             self._mp = mp
             task_model_path = Path("data/weights/hand_landmarker.task")
+            if not task_model_path.is_file():
+                repo_candidate = Path(__file__).resolve().parents[2] / "data" / "weights" / "hand_landmarker.task"
+                if repo_candidate.is_file():
+                    task_model_path = repo_candidate
             if hasattr(mp, "tasks") and hasattr(mp.tasks, "vision") and task_model_path.is_file():
                 try:
                     cache_key = (
@@ -300,9 +302,15 @@ class MediaPipeHandDetector(BaseHandDetector):
             )
 
         img = frame.image
+        if img.dtype != np.uint8:
+            img = np.clip(img, 0, 255).astype(np.uint8)
         h, w = img.shape[:2]
         if img.ndim == 3 and img.shape[2] == 3:
             rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+        elif img.ndim == 3 and img.shape[2] == 4:
+            rgb = cv2.cvtColor(img, cv2.COLOR_BGRA2RGB)
+        elif img.ndim == 3 and img.shape[2] == 1:
+            rgb = cv2.cvtColor(img[:, :, 0], cv2.COLOR_GRAY2RGB)
         else:
             rgb = cv2.cvtColor(img, cv2.COLOR_GRAY2RGB)
 
@@ -391,6 +399,7 @@ class MediaPipeHandDetector(BaseHandDetector):
                 rois=rois,
                 occlusion_threshold=self.config.occlusion_threshold,
                 board_size=board_size,
+                orientation=geometry.orientation,
             )
             is_present = np.any(board_mask > 0)
         else:
@@ -445,6 +454,10 @@ class ColorSilhouetteHandDetector(BaseHandDetector):
             )
 
         # Convert to YCrCb space for robust skin tone filtering
+        if img.dtype != np.uint8:
+            img = np.clip(img, 0, 255).astype(np.uint8)
+        if img.ndim == 3 and img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
         ycrcb = cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
         # Standard human skin tone empirical range in YCrCb
         lower_skin = np.array([40, 133, 77], dtype=np.uint8)
@@ -510,6 +523,7 @@ class ColorSilhouetteHandDetector(BaseHandDetector):
                 rois=rois,
                 occlusion_threshold=self.config.occlusion_threshold,
                 board_size=board_size,
+                orientation=geometry.orientation,
             )
             is_present = bool(np.any(board_mask > 0))
             if geometry.inverse_homography is not None:

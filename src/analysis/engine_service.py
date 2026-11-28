@@ -56,6 +56,8 @@ class AsyncEngineService:
         self._stop_event = threading.Event()
         self._thread: Optional[threading.Thread] = None
         self._lock = threading.RLock()
+        self._epoch: int = 0
+        self._event_epochs: dict[str, int] = {}
 
     @property
     def queue_size(self) -> int:
@@ -93,6 +95,18 @@ class AsyncEngineService:
             self.worker.close()
             logger.info("AsyncEngineService worker stopped and closed")
 
+    def clear_pending(self) -> None:
+        """Drains pending queued tasks and bumps session epoch so in-flight results are ignored."""
+        with self._lock:
+            self._epoch += 1
+            self._event_epochs.clear()
+            while True:
+                try:
+                    self._queue.get_nowait()
+                    self._queue.task_done()
+                except queue.Empty:
+                    break
+
     def submit_move(self, event: MoveEvent) -> bool:
         """Submits a MoveEvent for background evaluation without blocking the caller.
 
@@ -100,14 +114,16 @@ class AsyncEngineService:
             event: Confirmed MoveEvent.
 
         Returns:
-            True if task was queued, False if disabled or dropped due to queue overflow.
+            True if task was queued, False if disabled, stopped, or dropped due to queue overflow.
         """
-        if not self.config.stockfish_enabled:
-            logger.debug("Engine analysis disabled; skipping move ply=%d", event.ply)
+        if not self.config.stockfish_enabled or self._stop_event.is_set():
+            logger.debug("Engine analysis disabled or stopped; skipping move ply=%d", event.ply)
             return False
 
         try:
-            self._queue.put_nowait(event)
+            with self._lock:
+                self._event_epochs[event.event_id] = self._epoch
+                self._queue.put_nowait(event)
             return True
         except queue.Full:
             logger.warning(
@@ -145,6 +161,11 @@ class AsyncEngineService:
 
     def _process_event(self, event: MoveEvent) -> None:
         """Evaluates before/after positions for an event and emits completion callback."""
+        with self._lock:
+            task_epoch = self._event_epochs.get(event.event_id, self._epoch)
+        if self._stop_event.is_set() or task_epoch != self._epoch:
+            return
+
         board_before = chess.Board(event.fen_before)
         board_after = chess.Board(event.fen_after)
 
@@ -159,6 +180,9 @@ class AsyncEngineService:
             depth=self.config.stockfish_depth,
             timeout_sec=self.config.timeout_sec,
         )
+
+        if self._stop_event.is_set() or task_epoch != self._epoch:
+            return
 
         result = self.evaluator.evaluate_move(event, eval_before, eval_after)
 

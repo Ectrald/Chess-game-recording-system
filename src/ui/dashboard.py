@@ -111,7 +111,8 @@ class InteractiveDashboard:
 
                 # GUI rendering and hotkey processing
                 if not self.headless:
-                    corners = getattr(self.orchestrator, "_corners", None)
+                    geom = getattr(self.orchestrator, "_board_geometry", None)
+                    corners = geom.corners if geom is not None else None
                     vis_frame = self.composer.compose(frame.image, state, corners=corners)
                     cv2.imshow(self.window_name, vis_frame)
 
@@ -122,10 +123,10 @@ class InteractiveDashboard:
                             is_paused = self.orchestrator.toggle_pause()
                             logger.info("Operator triggered Pause=%s", is_paused)
 
-                        # 'R': Orientation Recalibration
+                        # 'R': Orientation & Geometry Recalibration
                         elif key in (ord("r"), ord("R")):
-                            self.orchestrator._orientation_calibrated = False
-                            logger.info("Operator requested orientation recalibration.")
+                            self.orchestrator.recalibrate()
+                            logger.info("Operator requested board & orientation recalibration.")
 
                         # 'Z': Rollback last move
                         elif key in (ord("z"), ord("Z")):

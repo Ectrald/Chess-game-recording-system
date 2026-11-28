@@ -39,14 +39,26 @@ class MJPEGStreamer:
         Args:
             frame_bgr: Composite HUD image [H, W, 3] in BGR color format.
         """
-        success, buffer = cv2.imencode(
-            ".jpg",
-            frame_bgr,
-            [int(cv2.IMWRITE_JPEG_QUALITY), self.quality],
-        )
-        if success:
-            with self._lock:
-                self._latest_jpeg = buffer.tobytes()
+        if frame_bgr is None or not isinstance(frame_bgr, np.ndarray) or frame_bgr.size == 0:
+            return
+        img = frame_bgr
+        if img.dtype != np.uint8:
+            img = np.clip(img, 0, 255).astype(np.uint8)
+        if img.ndim == 2:
+            img = cv2.cvtColor(img, cv2.COLOR_GRAY2BGR)
+        elif img.ndim == 3 and img.shape[2] == 4:
+            img = cv2.cvtColor(img, cv2.COLOR_BGRA2BGR)
+        try:
+            success, buffer = cv2.imencode(
+                ".jpg",
+                img,
+                [int(cv2.IMWRITE_JPEG_QUALITY), self.quality],
+            )
+            if success:
+                with self._lock:
+                    self._latest_jpeg = buffer.tobytes()
+        except cv2.error as exc:
+            logger.debug("JPEG encoding failed for frame shape=%s: %s", img.shape, exc)
 
     def update_jpeg_bytes(self, jpeg_bytes: bytes) -> None:
         """Sets pre-encoded JPEG bytes into the buffer atomically."""
@@ -63,28 +75,29 @@ class MJPEGStreamer:
 
     def _get_placeholder(self) -> bytes:
         """Generates or returns a cached dark placeholder image."""
-        if self._placeholder_jpeg is None:
-            canvas = np.zeros((360, 640, 3), dtype=np.uint8)
-            canvas[:] = (30, 30, 30)
-            text = "Awaiting Video Stream..."
-            cv2.putText(
-                canvas,
-                text,
-                (140, 190),
-                cv2.FONT_HERSHEY_SIMPLEX,
-                0.8,
-                (180, 180, 180),
-                2,
-                cv2.LINE_AA,
-            )
-            success, buffer = cv2.imencode(
-                ".jpg",
-                canvas,
-                [int(cv2.IMWRITE_JPEG_QUALITY), 75],
-            )
-            self._placeholder_jpeg = buffer.tobytes() if success else b""
+        with self._lock:
+            if self._placeholder_jpeg is None:
+                canvas = np.zeros((360, 640, 3), dtype=np.uint8)
+                canvas[:] = (30, 30, 30)
+                text = "Awaiting Video Stream..."
+                cv2.putText(
+                    canvas,
+                    text,
+                    (140, 190),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.8,
+                    (180, 180, 180),
+                    2,
+                    cv2.LINE_AA,
+                )
+                success, buffer = cv2.imencode(
+                    ".jpg",
+                    canvas,
+                    [int(cv2.IMWRITE_JPEG_QUALITY), 75],
+                )
+                self._placeholder_jpeg = buffer.tobytes() if success else b""
 
-        return self._placeholder_jpeg
+            return self._placeholder_jpeg
 
     async def frame_generator(self, fps: Optional[int] = None) -> AsyncGenerator[bytes, None]:
         """Asynchronously yields multipart MJPEG boundary frames for HTTP streaming.

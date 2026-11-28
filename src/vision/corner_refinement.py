@@ -64,10 +64,16 @@ def refine_subpixel_corners(
     if len(corners) != 4:
         raise ValueError(f"Expected 4 corners, got {len(corners)}")
 
-    if image.ndim == 3:
+    if image.ndim == 3 and image.shape[2] == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    elif image.ndim == 3 and image.shape[2] == 4:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+    elif image.ndim == 3 and image.shape[2] == 1:
+        gray = image[:, :, 0].copy()
     else:
         gray = image.copy()
+    if gray.dtype != np.uint8:
+        gray = np.clip(gray, 0, 255).astype(np.uint8)
 
     criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 40, 0.001)
     pts_in = np.array(corners, dtype=np.float32)
@@ -95,8 +101,9 @@ def refine_subpixel_corners(
 
 
 def fit_line_cluster(line_pts: np.ndarray) -> Tuple[float, float, float]:
-    """Fits 2D line in standard form ax + by + c = 0 to a set of 2D points."""
-    vx, vy, x0, y0 = cv2.fitLine(line_pts, cv2.DIST_L2, 0, 0.01, 0.01).flatten()
+    """Fits 2D line in standard form ax + by + c = 0 to a set of 2D points using Huber M-estimator."""
+    dist_type = cv2.DIST_HUBER if len(line_pts) >= 4 else cv2.DIST_L2
+    vx, vy, x0, y0 = cv2.fitLine(line_pts, dist_type, 0, 0.01, 0.01).flatten()
     a = float(vy)
     b = float(-vx)
     c = float(vx * y0 - vy * x0)
@@ -119,7 +126,7 @@ def _select_grid_boundary_candidates(
     sorted_lines: List[Tuple[float, float, float, Tuple[float, float, float, float]]],
     dim: int,
     cluster_tol: float,
-    top_k: int = 5,
+    top_k: int = 8,
     angle_tol: float = 6.0,
 ) -> List[
     Tuple[
@@ -193,7 +200,7 @@ def _select_grid_boundary_candidates(
                         inliers += 1
                         err_sum += md
                 if inliers >= 5:
-                    score = inliers * 10.0 - err_sum * 0.12 + (span / max(1, dim)) * 0.5 - fragile_penalty
+                    score = inliers * 10.0 - err_sum * 0.12 + (span / max(1, dim)) * 6.0 - fragile_penalty
                     if best_pair_score is None or score > best_pair_score:
                         best_pair_score = score
 
@@ -254,7 +261,7 @@ def _checkerboard_border_score(gray: np.ndarray, corners: List[Tuple[float, floa
     )
 
     center_alt = float(np.median(row_alts[2:6] + col_alts[2:6]))
-    subgrid_penalty = -4.0 if (aligned_v < 5 or aligned_h < 5) else 0.0
+    subgrid_penalty = -20.0 if (aligned_v < 5 or aligned_h < 5) else 0.0
     return rim_bonus + subgrid_penalty + 0.45 * float(aligned_v + aligned_h) + 0.02 * min(80.0, center_alt)
 
 
@@ -275,10 +282,16 @@ def detect_corners_hough_lines(
     4. Clusters boundary lines by intercept + angle using 1D projective fitting & grid-phase scoring.
     5. Computes pairwise intersections of adjacent boundary lines.
     """
-    if image.ndim == 3:
+    if image.ndim == 3 and image.shape[2] == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    elif image.ndim == 3 and image.shape[2] == 4:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+    elif image.ndim == 3 and image.shape[2] == 1:
+        gray = image[:, :, 0].copy()
     else:
         gray = image.copy()
+    if gray.dtype != np.uint8:
+        gray = np.clip(gray, 0, 255).astype(np.uint8)
 
     h_img, w_img = gray.shape[:2]
     mid_x = w_img / 2.0
@@ -289,6 +302,7 @@ def detect_corners_hough_lines(
     edges = cv2.Canny(blur, canny_low, canny_high)
 
     eff_min_len = min(min_line_len, max(34, int(min_dim * 0.078)))
+    cv2.setRNGSeed(12345)
     lines = cv2.HoughLinesP(
         edges,
         rho=1,
@@ -330,9 +344,9 @@ def detect_corners_hough_lines(
     v_lines.sort(key=lambda it: it[0])
 
     # Cluster boundary lines via 1D projective cross-ratio fitting + checkerboard verification
-    eff_cluster_tol = max(cluster_tol, min_dim * 0.012)
-    h_cands = _select_grid_boundary_candidates(h_lines, h_img, eff_cluster_tol, top_k=5)
-    v_cands = _select_grid_boundary_candidates(v_lines, w_img, eff_cluster_tol, top_k=5)
+    eff_cluster_tol = max(4.0, min(cluster_tol, min_dim * 0.005))
+    h_cands = _select_grid_boundary_candidates(h_lines, h_img, eff_cluster_tol, top_k=8)
+    v_cands = _select_grid_boundary_candidates(v_lines, w_img, eff_cluster_tol, top_k=8)
 
     def extract_pts(items: List[Tuple[float, float, float, Tuple[float, float, float, float]]]) -> np.ndarray:
         pts = []
@@ -377,14 +391,16 @@ def detect_corners_hough_lines(
 
             canonical = order_corners_canonical(corners)
             if skip_cb:
-                return canonical
+                return refine_subpixel_corners(gray, canonical, win_size=5, max_shift=2.5)
 
             total_score = h_score + v_score + _checkerboard_border_score(gray, canonical)
             if total_score > best_total_score:
                 best_total_score = total_score
                 best_corners = canonical
 
-    return best_corners
+    if best_corners is None:
+        return None
+    return refine_subpixel_corners(gray, best_corners, win_size=5, max_shift=2.5)
 
 
 def detect_corners_contour_hull(
@@ -392,10 +408,16 @@ def detect_corners_contour_hull(
     min_area_ratio: float = 0.10,
 ) -> Optional[List[Tuple[float, float]]]:
     """Fallback detector using largest convex quadrilateral contour approximation."""
-    if image.ndim == 3:
+    if image.ndim == 3 and image.shape[2] == 3:
         gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    elif image.ndim == 3 and image.shape[2] == 4:
+        gray = cv2.cvtColor(image, cv2.COLOR_BGRA2GRAY)
+    elif image.ndim == 3 and image.shape[2] == 1:
+        gray = image[:, :, 0].copy()
     else:
         gray = image.copy()
+    if gray.dtype != np.uint8:
+        gray = np.clip(gray, 0, 255).astype(np.uint8)
 
     h_img, w_img = gray.shape[:2]
     total_area = float(h_img * w_img)
